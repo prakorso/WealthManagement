@@ -1202,44 +1202,14 @@ async function fetchCryptoPrices(){
 async function fetchSahamPrices(){
   const kodes=[...new Set(SAHAM_TXS.map(t=>t.kode))];
   if(!kodes.length) return;
-
-  // Reset — jangan pakai nilai lama
   kodes.forEach(k=>delete SAHAM_LIVE[k]);
 
-  // Satu-satunya strategi reliable: lewat Apps Script (server-side, no CORS)
-  if(!WEB_URL){
-    // Kalau belum setup Apps Script, fallback ke cache lokal max 3 hari
-    kodes.forEach(k=>{
-      try{
-        const c=JSON.parse(lsg('saham_cache_'+k)||'null');
-        if(c&&(Date.now()-c.ts)<3*24*60*60*1000) SAHAM_LIVE[k]=c.price;
-      }catch(e){}
-    });
-    return;
-  }
-
-  try{
-    // Panggil endpoint sahamPrices di Apps Script
-    const r=await fetch(`${WEB_URL}?action=sahamPrices&kodes=${kodes.join(',')}`,{
-      signal:AbortSignal.timeout(20000)
-    });
-    const d=await r.json();
-    if(d.prices && Object.keys(d.prices).length){
-      Object.entries(d.prices).forEach(([k,v])=>{
-        if(v>0){
-          SAHAM_LIVE[k]=v;
-          lss('saham_cache_'+k,JSON.stringify({price:v,ts:Date.now()}));
-        }
-      });
-      return; // sukses
-    }
-  }catch(e){}
-
-  // Fallback: cache lokal max 3 hari
+  // Baca dari hargaCache yang sudah di-load dari sheet
+  // (fetchSheet sudah load hargaCache sebelumnya, tinggal pakai)
   kodes.forEach(k=>{
     try{
       const c=JSON.parse(lsg('saham_cache_'+k)||'null');
-      if(c&&(Date.now()-c.ts)<3*24*60*60*1000) SAHAM_LIVE[k]=c.price;
+      if(c&&c.price>0&&(Date.now()-c.ts)<7*24*60*60*1000) SAHAM_LIVE[k]=c.price;
     }catch(e){}
   });
 }
@@ -1625,20 +1595,51 @@ function openSetup(){ openOv('setup-ov'); }
 async function refreshSahamOnly(){
   const btn=document.getElementById('btn-saham-refresh');
   if(btn){ btn.disabled=true; btn.innerHTML='<i class="ti ti-loader-2" style="animation:spin .7s linear infinite"></i> Memuat...'; }
-  // Clear semua cache saham dulu supaya paksa fetch ulang
+
   const kodes=[...new Set(SAHAM_TXS.map(t=>t.kode))];
-  kodes.forEach(k=>{
-    delete SAHAM_LIVE[k];
-    localStorage.removeItem('saham_cache_'+k);
-  });
-  await fetchSahamPrices();
+  kodes.forEach(k=>{ delete SAHAM_LIVE[k]; localStorage.removeItem('saham_cache_'+k); });
+
+  let success=false;
+
+  // Strategi 1: Baca hargaCache dari sheet via action=load (paling reliable)
+  if(WEB_URL){
+    try{
+      const r=await fetch(`${WEB_URL}?action=load`,{signal:AbortSignal.timeout(15000)});
+      const d=await r.json();
+      if(d.hargaCache && Object.keys(d.hargaCache).length){
+        kodes.forEach(k=>{
+          const p=d.hargaCache[k];
+          if(p&&p>0){
+            SAHAM_LIVE[k]=p;
+            lss('saham_cache_'+k,JSON.stringify({price:p,ts:Date.now()}));
+            success=true;
+          }
+        });
+      }
+    }catch(e){}
+  }
+
+  // Strategi 2: Panggil sahamPrices endpoint (update cache + return harga)
+  if(!success && WEB_URL){
+    try{
+      const r=await fetch(`${WEB_URL}?action=sahamPrices&kodes=${kodes.join(',')}`,{signal:AbortSignal.timeout(20000)});
+      const d=await r.json();
+      if(d.prices && Object.keys(d.prices).length){
+        Object.entries(d.prices).forEach(([k,v])=>{
+          if(v>0){ SAHAM_LIVE[k]=v; lss('saham_cache_'+k,JSON.stringify({price:v,ts:Date.now()})); success=true; }
+        });
+      }
+    }catch(e){}
+  }
+
   renderAll();
   if(btn){ btn.disabled=false; btn.innerHTML='<i class="ti ti-refresh"></i> Update harga'; }
+
   const got=kodes.filter(k=>SAHAM_LIVE[k]);
   if(got.length){
-    showToast('saham-toast','✓ Harga diupdate: '+got.map(k=>k+' Rp'+SAHAM_LIVE[k]?.toLocaleString('id-ID')).join(', '),'ok',6000);
+    showToast('saham-toast','✓ '+got.map(k=>k+': Rp'+SAHAM_LIVE[k]?.toLocaleString('id-ID')).join(', '),'ok',6000);
   } else {
-    showToast('saham-toast','Gagal fetch harga. Coba beberapa menit lagi atau run dailySnapshot di Apps Script.','err',6000);
+    showToast('saham-toast','Harga tidak tersedia. Pastikan Apps Script sudah redeploy dan tersambung di Settings.','err',6000);
   }
 }
 
