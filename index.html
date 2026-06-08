@@ -860,14 +860,6 @@ function pageOverview(){
   const spDelta  = cfPrev.spend>0  ? (cf.spend-cfPrev.spend)/cfPrev.spend*100   : null;
   const svDelta  = cfPrev.saving>0 ? (cf.saving-cfPrev.saving)/cfPrev.saving*100: null;
 
-  // FIRE calculation (4% rule — 25× annual spending)
-  const annualSpend = avgSpend * 12;
-  const fireTarget  = parseFloat(STATE.config.fire_target||'0') || (annualSpend>0 ? annualSpend*25 : 0);
-  const firePct     = fireTarget>0 ? Math.min(100, nw.netWorth/fireTarget*100) : 0;
-  const annualSave  = cf.saving>0 ? cf.saving*12 : (parseFloat(savingRate)/100*(cf.income||avgSpend)*12);
-  const yearsToFire = fireTarget>nw.netWorth && annualSave>0
-    ? Math.ceil((fireTarget-nw.netWorth)/annualSave) : (nw.netWorth>=fireTarget&&fireTarget>0?0:null);
-
   // NW sparkline data (last 30 snapshots)
   const sparkData = snaps.slice(-30).map(s=>s.netWorth||0);
 
@@ -876,6 +868,15 @@ function pageOverview(){
   const cashAfterCommit = availableCash - commit.total;
   // Avg spending dari 3 periode terakhir (lebih stabil dari 1 bulan)
   const avgSpend = calcAvgSpending();
+
+  // FIRE calculation (4% rule — 25× annual spending)
+  const annualSpend = avgSpend * 12;
+  const fireTarget  = parseFloat(STATE.config.fire_target||'0') || (annualSpend>0 ? annualSpend*25 : 0);
+  const firePct     = fireTarget>0 ? Math.min(100, nw.netWorth/fireTarget*100) : 0;
+  const annualSave  = cf.saving>0 ? cf.saving*12 : (parseFloat(savingRate)/100*(cf.income||avgSpend)*12);
+  const yearsToFire = fireTarget>nw.netWorth && annualSave>0
+    ? Math.ceil((fireTarget-nw.netWorth)/annualSave) : (nw.netWorth>=fireTarget&&fireTarget>0?0:null);
+
   const runwaySpend  = avgSpend > 0 ? availableCash / avgSpend : null;       // berapa bulan cash bertahan vs spending
   const runwayCommit = commit.total > 0 ? availableCash / commit.total : null; // cash vs total commitment
 
