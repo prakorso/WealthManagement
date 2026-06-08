@@ -251,6 +251,7 @@ hr.dv{border:none;border-top:1px solid var(--border);margin:20px 0}
   .content{padding:16px 14px 80px}
   .nw-amount{font-size:30px}
   .ov-grid{grid-template-columns:1fr}
+  .inv-hdr{flex-wrap:wrap;gap:8px}
   .alloc-grid{grid-template-columns:1fr!important}
   .stat-grid{grid-template-columns:repeat(2,1fr)}
   .fgrid-4{grid-template-columns:1fr 1fr}
@@ -259,6 +260,14 @@ hr.dv{border:none;border-top:1px solid var(--border);margin:20px 0}
   .card-title{flex-wrap:wrap;gap:8px}
   .card-title .btn{font-size:11px}
 }
+/* ── MOBILE HELPER CLASSES ── */
+.scorecard-3{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
+.port-2col{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+.cashflow-3{display:flex;gap:10px;flex-wrap:wrap}
+.cashflow-3>div{flex:1;min-width:calc(33% - 8px)}
+.chip-row{display:flex;gap:6px;flex-wrap:wrap;align-items:center}
+.inv-hdr-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap;justify-content:flex-end;max-width:180px}
+
 @media(max-width:480px){
   .hero-prog-grid{grid-template-columns:1fr!important}
 
@@ -266,8 +275,17 @@ hr.dv{border:none;border-top:1px solid var(--border);margin:20px 0}
   .nw-amount{font-size:24px;letter-spacing:-1px}
   .fgrid-2,.fgrid-3,.fgrid-4{grid-template-columns:1fr}
   .metrics-grid{grid-template-columns:1fr 1fr}
-  .stat-val{font-size:14px}
+  .stat-val{font-size:13px}
+  .stat-val.gold,.stat-val.teal,.stat-val.rose{font-size:12px}
+  .nw-amount{word-break:break-all}
   .nw-row{flex-wrap:wrap;gap:8px}
+  .scorecard-3{grid-template-columns:1fr!important}
+  .cashflow-3{flex-wrap:wrap}
+  .cashflow-3>div{flex:1;min-width:calc(50% - 6px)}
+  .port-2col{grid-template-columns:1fr!important}
+  .inv-hdr-actions{max-width:100%;flex-direction:row;flex-wrap:wrap;gap:6px}
+  .inv-hdr{flex-wrap:wrap;gap:6px}
+  .metrics-grid{grid-template-columns:repeat(2,1fr)}
   .content{padding:14px 10px 80px}
   table{font-size:11px}
   th,td{padding:7px 6px}
@@ -1091,7 +1109,7 @@ function pageOverview(){
 
   <div class="card" style="margin-bottom:14px">
     <div class="card-title">📊 Monthly Scorecard — ${bln} ${thn}</div>
-    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px">
+    <div class="scorecard-3">
       ${[
         {label:'Income',cur:cf.income,prev:cfPrev.income,color:'var(--green)',delta:incDelta},
         {label:'Spending',cur:cf.spend,prev:cfPrev.spend,color:'var(--rose)',delta:spDelta,invert:true},
@@ -1151,16 +1169,16 @@ function pageOverview(){
         Cashflow — ${bln} ${thn}
         <button class="btn btn-ghost btn-xs" onclick="gotoPage('cashflow')" style="font-size:10px;color:var(--t3)">Lihat semua →</button>
       </div>
-      <div style="display:flex;gap:10px;margin-bottom:12px">
-        <div style="flex:1;background:var(--bg2);border-radius:var(--r);padding:10px;text-align:center">
+      <div class="cashflow-3" style="margin-bottom:12px">
+        <div style="background:var(--bg2);border-radius:var(--r);padding:10px;text-align:center">
           <div style="font-size:10px;color:var(--t3);margin-bottom:4px;text-transform:uppercase;letter-spacing:.05em">Income</div>
           <div style="font-family:var(--mono);font-size:13px;color:var(--green);font-weight:500">${fRp(cf.income)}</div>
         </div>
-        <div style="flex:1;background:var(--bg2);border-radius:var(--r);padding:10px;text-align:center">
+        <div style="background:var(--bg2);border-radius:var(--r);padding:10px;text-align:center">
           <div style="font-size:10px;color:var(--t3);margin-bottom:4px;text-transform:uppercase;letter-spacing:.05em">Spending</div>
           <div style="font-family:var(--mono);font-size:13px;color:var(--rose);font-weight:500">${fRp(cf.spend)}</div>
         </div>
-        <div style="flex:1;background:var(--bg2);border-radius:var(--r);padding:10px;text-align:center">
+        <div style="background:var(--bg2);border-radius:var(--r);padding:10px;text-align:center">
           <div style="font-size:10px;color:var(--t3);margin-bottom:4px;text-transform:uppercase;letter-spacing:.05em">Saving</div>
           <div style="font-family:var(--mono);font-size:13px;color:var(--teal);font-weight:500">${fRp(cf.saving)}</div>
         </div>
@@ -1560,7 +1578,7 @@ function pagePortfolio(){
     <div class="stat"><div class="stat-lbl">Total Return</div><div class="stat-val ${gls(P.totalRet)}">${fPct(P.totalRet)}</div></div>
   </div>
 
-  <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:14px" class="ov-grid">
+  <div class="port-2col" style="margin-bottom:14px">
     <div class="chart-card" style="margin:0">
       <div class="chart-hdr"><div class="chart-title">🍕 Alokasi Portfolio</div></div>
       <div class="chart-wrap" style="height:240px"><canvas id="ch-port-alloc"></canvas></div>
@@ -1656,7 +1674,7 @@ function pagePortfolio(){
       return `<div style="margin-bottom:10px">
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
           <span style="font-size:12px;font-weight:700">${s.kode}</span>
-          <div style="display:flex;gap:6px">
+          <div class="chip-row">
             <span class="chip neu" style="font-size:10px">${buyTxs.length} lot entry</span>
             ${sellTxs.length?`<span class="chip chip-rose" style="font-size:10px;background:var(--rose-bg);color:var(--rose)">${sellTxs.length} jual</span>`:''}
             <span style="font-size:11px;font-family:var(--mono);color:var(--t2)">Avg: ${fRp(s.avgBeli)}</span>
@@ -1739,7 +1757,7 @@ function pageCrypto(){
           <div class="inv-name">${label} ${isSpot?'<span style="font-size:10px;background:var(--gold-bg);color:var(--gold);padding:2px 8px;border-radius:4px;font-weight:500">SPOT</span>':''}</div>
           <div class="inv-sub">${sub}</div>
         </div>
-        <div style="display:flex;align-items:center;gap:8px">
+        <div class="inv-hdr-actions">
           <span class="chip ${chipClass(ret)}">${fPct(ret)}</span>
         </div>
       </div>
@@ -1845,7 +1863,7 @@ function pageSaham(){
         <div class="inv-name">${s.kode}</div>
         <div class="inv-sub">${s.lotQty} lot · ${s.lembar.toLocaleString('id-ID')} lembar · Avg ${fRp(s.avgBeli)}</div>
       </div>
-      <div style="display:flex;align-items:center;gap:8px">
+      <div class="inv-hdr-actions">
         <span class="chip ${chipClass(s.ret)}">${fPct(s.ret)}</span>
         <button class="btn btn-sm btn-rose" onclick="openSellModal('${s.kode}','Saham',${s.lotQty},${s.avgBeli||0})"><i class="ti ti-trending-down"></i> Jual</button>
       </div>
@@ -3046,7 +3064,7 @@ function openSellModal(kode, tipe, availableLot, avgCostPerUnit){
     </div>
     <div id="sell-est" style="background:var(--bg2);border-radius:var(--r);padding:12px 14px;margin-bottom:12px;display:none">
       <div style="font-size:10px;color:var(--t3);text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px">Estimasi Transaksi</div>
-      <div id="sell-est-inner" style="display:grid;grid-template-columns:1fr 1fr;gap:8px;font-size:12px"></div>
+      <div id="sell-est-inner" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:8px;font-size:12px"></div>
     </div>
     <label style="display:flex;align-items:center;gap:8px;font-size:12px;color:var(--t2);margin-bottom:14px;cursor:pointer">
       <input type="checkbox" id="sell-catat" checked style="width:auto;flex-shrink:0"/>
