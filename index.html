@@ -434,7 +434,7 @@ const K = {PASS:'ft_pass',SESS:'ft_sess',SNAP:'ft_snap',SHARGA:'ft_sh'};
 let STATE = {
   transactions: [], budget: [], btcDca: [], investasi: [],
   aset: [], goals: [], snapshots: [], config: {}, hargaCache: {},
-  commitments: [], liabilities: [], perkasa: null,
+  commitments: [], liabilities: [], subscriptions: [], perkasa: null,
   btcPrice: null, sahamLive: {}
 };
 
@@ -521,6 +521,7 @@ async function loadSheet(){
     if(d.aset?.length)         STATE.aset = d.aset;
     if(d.commitments?.length)  STATE.commitments = d.commitments;
     if(d.liabilities?.length)  STATE.liabilities = d.liabilities;
+    if(d.subscriptions?.length) STATE.subscriptions = d.subscriptions;
     if(d.perkasa)              STATE.perkasa = d.perkasa;
     if(d.goals?.length)        STATE.goals = d.goals;
     if(d.config)               STATE.config = d.config;
@@ -1928,10 +1929,10 @@ function pageSaham(){
 function pageKewajiban(){
   return `
   <div style="display:flex;align-items:center;gap:10px;margin-bottom:16px">
-    <div style="font-size:15px;font-weight:600;color:var(--t1)">📅 Upcoming Commitments</div>
+    <div style="font-size:15px;font-weight:600;color:var(--t1)">🔄 Subscriptions</div>
     <div style="flex:1;height:1px;background:var(--border)"></div>
   </div>
-  ${sectionCommitments()}
+  ${sectionSubscriptions()}
 
   <div style="display:flex;align-items:center;gap:10px;margin:28px 0 16px">
     <div style="font-size:15px;font-weight:600;color:var(--t1)">💳 Outstanding Debt</div>
@@ -1941,119 +1942,166 @@ function pageKewajiban(){
   `;
 }
 
-function sectionCommitments(){
-  const {pending,total} = calcCommitments();
-  const availableCash = calcAvailableCash();
-  const cashAfter = availableCash - total;
-  const sorted = [...STATE.commitments].sort((a,b)=>{
-    const da=parseDueDate(a.dueDate), db=parseDueDate(b.dueDate);
-    if(!da) return 1; if(!db) return -1; return da-db;
-  });
+function sectionSubscriptions(){
+  const subs = STATE.subscriptions || [];
+  const active = subs.filter(s=>s.aktif!==false);
+  const totalMonthly = active.reduce((a,s)=>a+(s.nominal||0),0);
+  const kategoriOpts = ['Streaming','SaaS','Fitness','Utilitas','Pendidikan','Cloud','Gaming','Lifestyle','Lainnya'];
+  const todayDate = new Date();
+  const todayTgl = todayDate.getDate();
 
-  const kategoriOpts = ['Gaji Karyawan','Pajak','Maintenance','Cicilan','Vendor','Tagihan Rutin','Sewa','Lainnya'];
+  const cards = subs.length===0
+    ? '<div style="text-align:center;padding:32px;color:var(--t3)"><div style="font-size:28px;margin-bottom:8px">🔄</div><div style="font-size:13px">Belum ada subscription. Tambah di atas.</div></div>'
+    : subs.map(s=>{
+        const isActive = s.aktif!==false;
+        const daysLeft = s.billingDate ? (s.billingDate>=todayTgl ? s.billingDate-todayTgl : 30-(todayTgl-s.billingDate)) : null;
+        const urgency = daysLeft!=null && daysLeft<=3;
+        return `<div class="inv-card" style="${isActive?'':'opacity:.5'}">
+  <div class="inv-hdr">
+    <div>
+      <div class="inv-name">${s.nama}</div>
+      <div class="inv-sub">${s.kategori||'—'} ${s.billingDate?'· tgl '+s.billingDate:''}${s.keterangan?' · '+s.keterangan:''}</div>
+    </div>
+    <div class="inv-hdr-actions">
+      <span class="chip ${isActive?'neu':'rose'}" style="font-size:10px">${isActive?'Aktif':'Nonaktif'}</span>
+      ${urgency?'<span class="chip gold" style="font-size:10px">'+daysLeft+'h lagi</span>':''}
+    </div>
+  </div>
+  <div class="metrics-grid" style="margin:10px 0">
+    <div class="metric"><div class="metric-lbl">Nominal/Bulan</div><div class="metric-val rose">${fRp(s.nominal)}</div></div>
+    <div class="metric"><div class="metric-lbl">Billing Tgl</div><div class="metric-val">${s.billingDate||'—'}</div></div>
+  </div>
+  <div style="display:flex;gap:8px;flex-wrap:wrap">
+    ${isActive?`<button class="btn btn-sm btn-teal" onclick="bayarSubscription('${s.id}')"><i class="ti ti-check"></i> Bayar & Catat</button>`:''}
+    <button class="btn btn-ghost btn-xs" onclick="editSubscription('${s.id}')"><i class="ti ti-edit"></i></button>
+    <button class="btn btn-ghost btn-xs" onclick="toggleSubscription('${s.id}')" title="${isActive?'Nonaktifkan':'Aktifkan'}"><i class="ti ti-${isActive?'player-pause':'player-play'}"></i></button>
+    <button class="btn btn-ghost btn-xs" style="color:var(--rose)" onclick="deleteSubscription('${s.id}')"><i class="ti ti-trash"></i></button>
+  </div>
+</div>`;
+      }).join('');
 
   return `
   <div class="stat-grid" style="margin-bottom:16px">
-    <div class="stat"><div class="stat-lbl">Available Cash</div><div class="stat-val teal">${fRp(availableCash)}</div></div>
-    <div class="stat rose"><div class="stat-lbl">Total Commitments</div><div class="stat-val rose">${fRp(total)}</div><div class="stat-hint">${pending.length} kewajiban pending</div></div>
-    <div class="stat"><div class="stat-lbl">Estimasi Cash Setelah Bayar</div><div class="stat-val ${cashAfter>=0?'teal':'rose'}">${fRp(cashAfter)}</div></div>
-    <div class="stat"><div class="stat-lbl">Status</div><div class="stat-val ${cashAfter>=0?'green':'rose'}" style="font-size:13px">${cashAfter>=0?'Aman':'Defisit'}</div></div>
+    <div class="stat"><div class="stat-lbl">Total Subscriptions</div><div class="stat-val">${subs.length}</div><div class="stat-hint">${active.length} aktif</div></div>
+    <div class="stat rose"><div class="stat-lbl">Total /Bulan</div><div class="stat-val rose">${fRp(totalMonthly)}</div></div>
+    <div class="stat"><div class="stat-lbl">Total /Tahun</div><div class="stat-val">${fRp(totalMonthly*12)}</div></div>
   </div>
 
   <div class="card" style="margin-bottom:14px">
-    <div class="card-title">Tambah Kewajiban</div>
+    <div class="card-title">Tambah Subscription</div>
     <div class="fgrid fgrid-4" style="margin-bottom:8px">
-      <div class="fg"><label>Due Date</label><input type="date" id="cm-due" value="${today()}"/></div>
-      <div class="fg"><label>Deskripsi</label><input type="text" id="cm-desk" placeholder="Gaji karyawan, pajak motor, dll"/></div>
-      <div class="fg"><label>Nominal (Rp)</label><input type="number" id="cm-nom" placeholder="3000000"/></div>
-      <div class="fg"><label>Kategori</label><select id="cm-kat">${kategoriOpts.map(k=>'<option>'+k+'</option>').join('')}</select></div>
+      <div class="fg"><label>Nama</label><input type="text" id="sb-nama" placeholder="Netflix, Spotify, dll"/></div>
+      <div class="fg"><label>Nominal (Rp/bln)</label><input type="number" id="sb-nom" placeholder="79000"/></div>
+      <div class="fg"><label>Billing Tgl</label><input type="number" id="sb-tgl" min="1" max="31" placeholder="1-31"/></div>
+      <div class="fg"><label>Kategori</label><select id="sb-kat">${kategoriOpts.map(k=>'<option>'+k+'</option>').join('')}</select></div>
     </div>
-    <button class="btn btn-gold btn-full" onclick="submitCommitment()" style="margin-bottom:8px"><i class="ti ti-plus"></i> Tambah Kewajiban</button>
-    <div id="cm-toast" class="toast"></div>
+    <div class="fgrid fgrid-2" style="margin-bottom:8px">
+      <div class="fg"><label>Keterangan (opsional)</label><input type="text" id="sb-ket" placeholder="plan, akun, dll"/></div>
+    </div>
+    <button class="btn btn-gold btn-full" onclick="addSubscription()"><i class="ti ti-plus"></i> Tambah Subscription</button>
+    <div id="sb-toast" class="toast"></div>
   </div>
 
   <div class="card">
-    <div class="card-title">Daftar Kewajiban Mendatang</div>
-    ${sorted.length===0
-      ? '<div style="text-align:center;padding:32px;color:var(--t3)"><div style="font-size:24px;margin-bottom:8px">📅</div><div style="font-size:13px">Belum ada kewajiban tercatat.</div></div>'
-      : '<div class="tbl-wrap"><div class="tbl-scroll"><table><thead><tr><th>Due Date</th><th>Sisa Hari</th><th>Deskripsi</th><th>Kategori</th><th style="text-align:right">Nominal</th><th>Status</th><th></th></tr></thead><tbody>'+
-        sorted.map(c=>{
-          const dleft = daysUntil(c.dueDate);
-          const dueChip = dleft==null ? '<span class="chip neu" style="font-size:10px">—</span>'
-            : dleft<0 ? '<span class="chip dn" style="font-size:10px">Telat '+Math.abs(dleft)+'h</span>'
-            : dleft===0 ? '<span class="chip dn" style="font-size:10px">Hari ini</span>'
-            : dleft<=7 ? '<span class="chip gold" style="font-size:10px">'+dleft+' hari</span>'
-            : '<span class="chip neu" style="font-size:10px">'+dleft+' hari</span>';
-          const isLunas = c.status==='lunas';
-          const statusChip = isLunas ? '<span class="chip up" style="font-size:10px">Lunas</span>' : '<span class="chip gold" style="font-size:10px">Pending</span>';
-          return '<tr style="'+(isLunas?'opacity:.5':'')+'"><td class="td-mono" style="white-space:nowrap">'+fmtTgl(c.dueDate)+'</td><td>'+dueChip+'</td><td style="font-weight:500">'+(c.deskripsi||'—')+'</td><td><span class="chip neu" style="font-size:10px">'+(c.kategori||'—')+'</span></td><td style="text-align:right;font-family:var(--mono);color:var(--rose)">'+fRp(c.nominal)+'</td><td>'+statusChip+'</td><td><div class="td-act"><button class="btn btn-ghost btn-xs" onclick="editCommitment(\''+c.id+'\')" title="Edit"><i class="ti ti-edit"></i></button><button class="btn btn-ghost btn-xs" onclick="toggleCommitment(\''+c.id+'\')" title="'+(isLunas?'Tandai pending':'Tandai lunas')+'"><i class="ti ti-'+(isLunas?'rotate':'check')+'"></i></button><button class="btn btn-ghost btn-xs" style="color:var(--rose)" onclick="deleteCommitment(\''+c.id+'\')"><i class="ti ti-trash"></i></button></div></td></tr>';
-        }).join('')+
-        '</tbody></table></div></div>'
-    }
+    <div class="card-title">Daftar Subscription</div>
+    ${cards}
   </div>`;
 }
 
-// ── Commitment actions ──────────────────────────────────────
-async function submitCommitment(){
-  const due  = document.getElementById('cm-due')?.value;
-  const desk = document.getElementById('cm-desk')?.value.trim();
-  const nom  = parseFloat(document.getElementById('cm-nom')?.value)||0;
-  const kat  = document.getElementById('cm-kat')?.value;
-  if(!due||!desk||!nom){ showToast('cm-toast','Lengkapi due date, deskripsi, dan nominal.','err'); return; }
-  const c = {id:'cm_'+Date.now(), dueDate:fmtTgl(due), deskripsi:desk, nominal:nom, kategori:kat, status:'pending'};
-  STATE.commitments.push(c);
+async function addSubscription(){
+  const nama = document.getElementById('sb-nama')?.value.trim();
+  const nom  = parseFloat(document.getElementById('sb-nom')?.value)||0;
+  const tgl2 = parseInt(document.getElementById('sb-tgl')?.value)||1;
+  const kat  = document.getElementById('sb-kat')?.value;
+  const ket  = document.getElementById('sb-ket')?.value.trim();
+  if(!nama||!nom){ showToast('sb-toast','Nama dan nominal wajib diisi.','err'); return; }
+  const s = {id:'sb_'+Date.now(), nama, nominal:nom, billingDate:tgl2, kategori:kat, keterangan:ket, aktif:true};
+  STATE.subscriptions.push(s);
   renderPage('kewajiban');
-  const ok = await callSheet({action:'addCommitment',...c});
-  showToast('cm-toast', ok.success?'✓ Tersimpan ke Sheets!':'⚠ Tersimpan lokal', ok.success?'ok':'warn');
+  const ok = await callSheet({action:'addSubscription',...s});
+  showToast('sb-toast', ok.success?'✓ Tersimpan ke Sheets!':'⚠ Tersimpan lokal', ok.success?'ok':'warn');
+}
+
+function editSubscription(id){
+  const s = STATE.subscriptions.find(x=>x.id===id);
+  if(!s) return;
+  const kategoriOpts = ['Streaming','SaaS','Fitness','Utilitas','Pendidikan','Cloud','Gaming','Lifestyle','Lainnya'];
+  document.getElementById('modal-title').textContent='Edit Subscription';
+  document.getElementById('modal-body').innerHTML=`
+    <div class="fgrid fgrid-2" style="margin-bottom:10px">
+      <div class="fg"><label>Nama</label><input type="text" id="esb-nama" value="${s.nama||''}"/></div>
+      <div class="fg"><label>Nominal (Rp/bln)</label><input type="number" id="esb-nom" value="${s.nominal||0}"/></div>
+    </div>
+    <div class="fgrid fgrid-2" style="margin-bottom:10px">
+      <div class="fg"><label>Billing Tgl</label><input type="number" id="esb-tgl" min="1" max="31" value="${s.billingDate||1}"/></div>
+      <div class="fg"><label>Kategori</label><select id="esb-kat">${kategoriOpts.map(k=>`<option${k===s.kategori?' selected':''}>${k}</option>`).join('')}</select></div>
+    </div>
+    <div class="fgrid fgrid-1" style="margin-bottom:14px">
+      <div class="fg"><label>Keterangan</label><input type="text" id="esb-ket" value="${s.keterangan||''}"/></div>
+    </div>
+    <button class="btn btn-gold btn-full" onclick="saveEditSubscription('${id}')">Simpan</button>`;
+  openModal();
+}
+
+async function saveEditSubscription(id){
+  const s = STATE.subscriptions.find(x=>x.id===id);
+  if(!s) return;
+  s.nama        = document.getElementById('esb-nama')?.value.trim() || s.nama;
+  s.nominal     = parseFloat(document.getElementById('esb-nom')?.value)||s.nominal;
+  s.billingDate = parseInt(document.getElementById('esb-tgl')?.value)||s.billingDate;
+  s.kategori    = document.getElementById('esb-kat')?.value;
+  s.keterangan  = document.getElementById('esb-ket')?.value.trim();
+  closeModal(); renderPage('kewajiban');
+  const ok = await callSheet({action:'updateSubscription',...s});
+  showToast('sb-toast', ok.success?'✓ Tersimpan!':'⚠ Update lokal', ok.success?'ok':'warn');
+}
+
+async function toggleSubscription(id){
+  const s = STATE.subscriptions.find(x=>x.id===id);
+  if(!s) return;
+  s.aktif = !s.aktif;
+  renderPage('kewajiban');
+  await callSheet({action:'updateSubscription',...s});
+}
+
+async function deleteSubscription(id){
+  if(!confirm('Hapus subscription ini?')) return;
+  STATE.subscriptions = STATE.subscriptions.filter(x=>x.id!==id);
+  renderPage('kewajiban');
+  await callSheet({action:'deleteSubscription',id});
+}
+
+async function bayarSubscription(id){
+  const s = STATE.subscriptions.find(x=>x.id===id);
+  if(!s) return;
+  const tgl = new Date();
+  const bln = BULAN_LIST[tgl.getMonth()];
+  const thn = String(tgl.getFullYear());
+  const tglStr = String(tgl.getDate()).padStart(2,'0')+'/'+String(tgl.getMonth()+1).padStart(2,'0')+'/'+thn;
+  const rekening = getRekening();
+  const tx = {
+    id:'tx_'+Date.now(), tanggal:tglStr, tipe:'pengeluaran',
+    deskripsi:'Subscription: '+s.nama, kategori:'Lifestyle',
+    subkategori:s.kategori, nominal:s.nominal,
+    akun:(STATE.config.akun_default||rekening[0]||''),
+    bulan:bln, tahun:thn, catatan:'auto-sub'
+  };
+  STATE.transactions.push(tx);
+  const ok = await callSheet({action:'addTransaction',...tx});
+  if(ok.success) alert('✓ Pembayaran '+fRp(s.nominal)+' untuk "'+s.nama+'" dicatat ke cashflow '+bln+' '+thn+'.');
+  else alert('⚠ Dicatat lokal. Sync ke Sheets gagal.');
 }
 
 async function toggleCommitment(id){
   const c = STATE.commitments.find(x=>x.id===id);
   if(!c) return;
   c.status = c.status==='lunas'?'pending':'lunas';
-  renderPage('kewajiban');
   await callSheet({action:'updateCommitment',id,status:c.status});
-}
-
-function editCommitment(id){
-  const c = STATE.commitments.find(x=>x.id===id);
-  if(!c) return;
-  const kategoriOpts = ['Gaji Karyawan','Pajak','Maintenance','Cicilan','Vendor','Tagihan Rutin','Sewa','Lainnya'];
-  // dueDate bisa format dd/mm/yyyy → ubah ke yyyy-mm-dd untuk input date
-  let dueVal = c.dueDate;
-  if(/^\d{2}\/\d{2}\/\d{4}$/.test(c.dueDate)){ const [d,m,y]=c.dueDate.split('/'); dueVal=y+'-'+m+'-'+d; }
-  document.getElementById('modal-title').textContent='Edit Kewajiban';
-  document.getElementById('modal-body').innerHTML=`
-    <div class="fgrid fgrid-2" style="margin-bottom:10px">
-      <div class="fg"><label>Due Date</label><input type="date" id="ecm-due" value="${dueVal}"/></div>
-      <div class="fg"><label>Nominal (Rp)</label><input type="number" id="ecm-nom" value="${c.nominal}"/></div>
-    </div>
-    <div class="fgrid fgrid-2" style="margin-bottom:14px">
-      <div class="fg"><label>Deskripsi</label><input type="text" id="ecm-desk" value="${c.deskripsi||''}"/></div>
-      <div class="fg"><label>Kategori</label><select id="ecm-kat">${kategoriOpts.map(k=>`<option${k===c.kategori?' selected':''}>${k}</option>`).join('')}</select></div>
-    </div>
-    <button class="btn btn-gold btn-full" onclick="saveEditCommitment('${id}')">Simpan</button>`;
-  openModal();
-}
-
-async function saveEditCommitment(id){
-  const c = STATE.commitments.find(x=>x.id===id);
-  if(!c) return;
-  const due  = document.getElementById('ecm-due')?.value;
-  const desk = document.getElementById('ecm-desk')?.value.trim();
-  const nom  = parseFloat(document.getElementById('ecm-nom')?.value)||0;
-  const kat  = document.getElementById('ecm-kat')?.value;
-  if(!due||!desk||!nom){ showToast('modal-toast','Lengkapi semua field.','err'); return; }
-  c.dueDate=fmtTgl(due); c.deskripsi=desk; c.nominal=nom; c.kategori=kat;
-  closeModal(); renderPage('kewajiban');
-  const ok = await callSheet({action:'updateCommitment',id,dueDate:c.dueDate,deskripsi:desk,nominal:nom,kategori:kat,status:c.status});
-  showToast('cm-toast', ok.success?'✓ Tersimpan!':'⚠ Update lokal', ok.success?'ok':'warn');
 }
 
 async function deleteCommitment(id){
   if(!confirm('Hapus kewajiban ini?')) return;
   STATE.commitments = STATE.commitments.filter(x=>x.id!==id);
-  renderPage('kewajiban');
   await callSheet({action:'deleteCommitment',id});
 }
 

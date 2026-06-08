@@ -60,6 +60,7 @@ function initSheets() {
   getSheet(ss, 'Harga_Cache',  ['kode','harga','updated']);
   getSheet(ss, 'Cash_Accounts',['nama','tipe','saldo_manual','override','urutan','aktif']);
   getSheet(ss, 'Commitments',  ['id','due_date','deskripsi','nominal','kategori','status']);
+  getSheet(ss, 'Subscriptions',['id','nama','nominal','billing_date','kategori','keterangan','aktif']);
   getSheet(ss, 'Liabilities',  ['id','nama','total_pinjaman','sisa_pokok','cicilan_bulan','kreditur','catatan','tanggal_update']);
   getSheet(ss, 'Config',       ['key','value']);
 
@@ -534,7 +535,19 @@ function doGet(e) {
         }
       } catch(e) {}
 
-      return out({ transactions, budget, btcDca, investasi, aset, goals, snapshots, config, hargaCache, cashAccounts, commitments, liabilities, perkasa });
+      // Subscriptions
+      const subscriptions = [];
+      getSheet(ss, 'Subscriptions', ['id','nama','nominal','billing_date','kategori','keterangan','aktif']).getDataRange().getValues()
+        .forEach((r, i) => {
+          if (i === 0 || !r[0]) return;
+          subscriptions.push({
+            id: String(r[0]), nama: String(r[1]||''), nominal: parseNum(r[2]),
+            billingDate: parseInt(r[3])||1, kategori: String(r[4]||''), keterangan: String(r[5]||''),
+            aktif: r[6]===false||r[6]==='FALSE'||r[6]===0 ? false : true
+          });
+        });
+
+      return out({ transactions, budget, btcDca, investasi, aset, goals, snapshots, config, hargaCache, cashAccounts, commitments, liabilities, subscriptions, perkasa });
     }
 
     return out({ error: 'Unknown action: ' + action });
@@ -780,6 +793,33 @@ function handleWrite(ss, data) {
     }
     if (action === 'deleteLiability') {
       const sh = getSheet(ss, 'Liabilities', ['id','nama','total_pinjaman','sisa_pokok','cicilan_bulan','kreditur','catatan','tanggal_update']);
+      const vals = sh.getDataRange().getValues();
+      for (let i = 1; i < vals.length; i++) {
+        if (String(vals[i][0]) === String(data.id)) { sh.deleteRow(i+1); return out({ success: true }); }
+      }
+      return out({ success: false, error: 'Not found' });
+    }
+
+    // ── Subscriptions ──────────────────────────────────────
+    if (action === 'addSubscription') {
+      const sh = getSheet(ss, 'Subscriptions', ['id','nama','nominal','billing_date','kategori','keterangan','aktif']);
+      const id = data.id || ('sb_' + Date.now());
+      sh.appendRow([id, data.nama||'', data.nominal||0, data.billingDate||1, data.kategori||'Lainnya', data.keterangan||'', data.aktif!==false]);
+      return out({ success: true, id });
+    }
+    if (action === 'updateSubscription') {
+      const sh = getSheet(ss, 'Subscriptions', ['id','nama','nominal','billing_date','kategori','keterangan','aktif']);
+      const vals = sh.getDataRange().getValues();
+      for (let i = 1; i < vals.length; i++) {
+        if (String(vals[i][0]) === String(data.id)) {
+          sh.getRange(i+1, 1, 1, 7).setValues([[data.id, data.nama||'', data.nominal||0, data.billingDate||1, data.kategori||'Lainnya', data.keterangan||'', data.aktif!==false]]);
+          return out({ success: true });
+        }
+      }
+      return out({ success: false, error: 'Not found' });
+    }
+    if (action === 'deleteSubscription') {
+      const sh = getSheet(ss, 'Subscriptions', ['id','nama','nominal','billing_date','kategori','keterangan','aktif']);
       const vals = sh.getDataRange().getValues();
       for (let i = 1; i < vals.length; i++) {
         if (String(vals[i][0]) === String(data.id)) { sh.deleteRow(i+1); return out({ success: true }); }
