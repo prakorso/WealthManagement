@@ -252,12 +252,12 @@ hr.dv{border:none;border-top:1px solid var(--border);margin:20px 0}
 .mobile-topbar{display:none;padding:14px 16px;align-items:center;gap:12px;border-bottom:1px solid var(--border);background:var(--bg1);position:sticky;top:0;z-index:100}
 .hamburger{background:transparent;border:none;color:var(--t1);cursor:pointer;padding:4px}
 .hamburger i{font-size:20px}
-.sidebar-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:99}
+.sidebar-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:204}
 .sidebar-overlay.open{display:block}
 
 /* ── RESPONSIVE ── */
 @media(max-width:768px){
-  .sidebar{transform:translateX(-100%)}
+  .sidebar{transform:translateX(-100%);height:calc(100vh - 56px - env(safe-area-inset-bottom,0px));overflow-y:auto;padding-bottom:8px;z-index:205}
   .sidebar.open{transform:translateX(0)}
   .main{margin-left:0}
   .mobile-topbar{display:flex}
