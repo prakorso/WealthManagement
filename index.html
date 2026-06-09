@@ -746,7 +746,10 @@ function calcAssetAllocation(){
   const nw   = calcNetWorth();
   const cash    = (typeof calcAvailableCash==='function') ? Math.max(0,calcAvailableCash()) : 0;
   const stocks  = port.filter(p=>p.tipe==='Saham').reduce((a,p)=>a+(p.cur||p.modal),0);
-  const crypto  = (dca.cur||dca.inv) + port.filter(p=>p.tipe==='Crypto').reduce((a,p)=>a+(p.cur||p.modal),0);
+  // Bitcoin = DCA + BTC Spot (investasi); Crypto = altcoin lainnya
+  const btcSpot = port.filter(p=>p.tipe==='Crypto'&&p.kode==='BTC').reduce((a,p)=>a+(p.cur||p.modal),0);
+  const bitcoin = (dca.cur||dca.inv) + btcSpot;
+  const crypto  = port.filter(p=>p.tipe==='Crypto'&&p.kode!=='BTC').reduce((a,p)=>a+(p.cur||p.modal),0);
   const business= nw.bisnisVal; // konsisten dengan Net Worth (termasuk Perkasa sync)
   // Property & real assets (non-investment, non-business)
   const propCats = ['Tanah','Rumah','Kost','Kendaraan','Emas Fisik','Piutang','Deposito','Properti','Lainnya'];
@@ -757,7 +760,8 @@ function calcAssetAllocation(){
   const segs = [
     {label:'Cash',     val:cash,     color:'#2dd4bf'},
     {label:'Stocks',   val:stocks,   color:'#60a5fa'},
-    {label:'Crypto',   val:crypto,   color:'#d4a84b'},
+    {label:'Bitcoin',  val:bitcoin,  color:'#d4a84b'},
+    {label:'Crypto',   val:crypto,   color:'#f97316'},
     {label:'Business', val:business, color:'#a78bfa'},
     {label:'Property', val:property, color:'#4ade80'},
     {label:'Others',   val:others,   color:'#f472b6'},
