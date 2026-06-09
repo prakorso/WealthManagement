@@ -266,6 +266,7 @@ hr.dv{border:none;border-top:1px solid var(--border);margin:20px 0}
   .nw-amount{font-size:30px}
   .ov-grid{grid-template-columns:1fr}
   .inv-hdr{flex-wrap:wrap;gap:8px}
+  .analisa-2col{grid-template-columns:1fr!important}
   .alloc-grid{grid-template-columns:1fr!important}
   .stat-grid{grid-template-columns:repeat(2,1fr)}
   .fgrid-4{grid-template-columns:1fr 1fr}
@@ -2663,7 +2664,7 @@ function pageAnalisa(){
     <div class="chart-wrap" style="height:260px"><canvas id="ch-growth"></canvas></div>
   </div>
 
-  <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:14px">
+  <div class="analisa-2col" style="display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:14px">
     <div class="chart-card" style="margin:0">
       <div class="chart-hdr"><div class="chart-title">💸 Income vs Spending</div></div>
       <div class="chart-wrap" style="height:200px"><canvas id="ch-cashflow"></canvas></div>
@@ -2937,7 +2938,8 @@ async function submitTx(){
   const thn  = d.getFullYear().toString();
   // Financial period — dari dropdown, fallback ke bulan tanggal
   const [pBln,pThn] = periodeVal.includes('|') ? periodeVal.split('|') : [bln,thn];
-  const tx   = {id:'tx_'+Date.now(), tanggal:fd, tipe:currTxType, deskripsi:desk, kategori:kat, subkategori:'', nominal:nom, akun, bulan:bln, tahun:thn, periodeBulan:pBln, periodeTahun:pThn, catatan:''};
+  // bulan/tahun di sheet = periode finansial (bukan tanggal transaksi) supaya filter cashflow selalu benar
+  const tx   = {id:'tx_'+Date.now(), tanggal:fd, tipe:currTxType, deskripsi:desk, kategori:kat, subkategori:'', nominal:nom, akun, bulan:pBln, tahun:pThn, periodeBulan:pBln, periodeTahun:pThn, catatan:''};
   STATE.transactions.push(tx);
   document.getElementById('tx-tgl').value = today();
   document.getElementById('tx-nom').value = '';
@@ -2989,7 +2991,8 @@ async function saveEditTx(id,bulan,tahun){
   const periodeVal = document.getElementById('etx-periode')?.value||'';
   if(!tgl||!nom){ showToast('modal-toast','Isi tanggal dan nominal.','err'); return; }
   const [pBln,pThn] = periodeVal.includes('|') ? periodeVal.split('|') : [bulan,tahun];
-  const tx = {id,tanggal:tgl,tipe,deskripsi:desk,kategori:kat,subkategori:'',nominal:nom,akun,bulan,tahun,periodeBulan:pBln,periodeTahun:pThn,catatan:''};
+  // bulan/tahun selalu ikut periode finansial agar filter cashflow konsisten
+  const tx = {id,tanggal:tgl,tipe,deskripsi:desk,kategori:kat,subkategori:'',nominal:nom,akun,bulan:pBln,tahun:pThn,periodeBulan:pBln,periodeTahun:pThn,catatan:''};
   const idx = STATE.transactions.findIndex(t=>t.id===id);
   if(idx>-1) STATE.transactions[idx]=tx;
   closeModal(); renderPage('cashflow');
