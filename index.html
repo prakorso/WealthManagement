@@ -315,7 +315,7 @@ hr.dv{border:none;border-top:1px solid var(--border);margin:20px 0}
 .bn-item{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;cursor:pointer;color:var(--t3);font-size:9px;font-weight:500;border:none;background:none;padding:6px 4px;transition:color .15s;-webkit-tap-highlight-color:transparent;text-transform:uppercase;letter-spacing:.04em}
 .bn-item i{font-size:20px}
 .bn-item.active{color:var(--gold)}
-.bn-more-menu{display:none;position:fixed;bottom:64px;left:0;right:0;background:var(--bg2);border-top:1px solid var(--border2);z-index:199;padding:8px;grid-template-columns:repeat(3,1fr);gap:6px}
+.bn-more-menu{display:none;position:fixed;bottom:calc(56px + env(safe-area-inset-bottom,0px));left:0;right:0;background:var(--bg2);border-top:1px solid var(--border2);z-index:201;padding:8px;grid-template-columns:repeat(3,1fr);gap:6px}
 .bn-more-menu.open{display:grid}
 .bn-more-item{display:flex;flex-direction:column;align-items:center;gap:4px;padding:12px 8px;border-radius:var(--r);cursor:pointer;color:var(--t2);font-size:10px;font-weight:500;text-transform:uppercase;letter-spacing:.04em;border:none;background:none}
 .bn-more-item i{font-size:20px}
@@ -337,7 +337,7 @@ hr.dv{border:none;border-top:1px solid var(--border);margin:20px 0}
 .bn-item{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;cursor:pointer;color:var(--t3);font-size:9px;font-weight:500;border:none;background:none;padding:6px 4px;transition:color .15s;-webkit-tap-highlight-color:transparent;text-transform:uppercase;letter-spacing:.04em}
 .bn-item i{font-size:20px}
 .bn-item.active{color:var(--gold)}
-.bn-more-menu{display:none;position:fixed;bottom:64px;left:0;right:0;background:var(--bg2);border-top:1px solid var(--border2);z-index:199;padding:8px;grid-template-columns:repeat(3,1fr);gap:6px}
+.bn-more-menu{display:none;position:fixed;bottom:calc(56px + env(safe-area-inset-bottom,0px));left:0;right:0;background:var(--bg2);border-top:1px solid var(--border2);z-index:201;padding:8px;grid-template-columns:repeat(3,1fr);gap:6px}
 .bn-more-menu.open{display:grid}
 .bn-more-item{display:flex;flex-direction:column;align-items:center;gap:4px;padding:12px 8px;border-radius:var(--r);cursor:pointer;color:var(--t2);font-size:10px;font-weight:500;text-transform:uppercase;letter-spacing:.04em;border:none;background:none}
 .bn-more-item i{font-size:20px}
@@ -451,6 +451,7 @@ hr.dv{border:none;border-top:1px solid var(--border);margin:20px 0}
   <button class="bn-more-item" data-page="goals" onclick="bnGoto('goals')"><i class="ti ti-target"></i>Goals</button>
   <button class="bn-more-item" data-page="analisa" onclick="bnGoto('analisa')"><i class="ti ti-chart-bar"></i>Analisa</button>
   <button class="bn-more-item" data-page="settings" onclick="bnGoto('settings')"><i class="ti ti-settings"></i>Settings</button>
+  <button class="bn-more-item" style="color:var(--rose)" onclick="closeBnMore();doLogout()"><i class="ti ti-logout"></i>Logout</button>
 </div>
 <nav class="bottom-nav" id="bottom-nav">
   <div class="bottom-nav-inner">
@@ -473,6 +474,7 @@ hr.dv{border:none;border-top:1px solid var(--border);margin:20px 0}
   <button class="bn-more-item" data-page="goals" onclick="bnGoto('goals')"><i class="ti ti-target"></i>Goals</button>
   <button class="bn-more-item" data-page="analisa" onclick="bnGoto('analisa')"><i class="ti ti-chart-bar"></i>Analisa</button>
   <button class="bn-more-item" data-page="settings" onclick="bnGoto('settings')"><i class="ti ti-settings"></i>Settings</button>
+  <button class="bn-more-item" style="color:var(--rose)" onclick="closeBnMore();doLogout()"><i class="ti ti-logout"></i>Logout</button>
 </div>
 <nav class="bottom-nav" id="bottom-nav">
   <div class="bottom-nav-inner">
