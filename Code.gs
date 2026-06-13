@@ -297,7 +297,7 @@ function syncPerkasaMotors() {
       unitTerjual++;
       if (bagiPanji > 0) {
         totalProfit += bagiPanji;
-        history.push({nama:u.nama, jenis:u.jenis, profit:bagiPanji, tglJual:u.tglJual||'', hargaJual:parseNum(u.hargaJual)});
+        history.push({nama:u.nama, jenis:u.jenis, profit:bagiPanji, modalPanji:mPanji, tglJual:u.tglJual||'', hargaJual:parseNum(u.hargaJual)});
       }
     }
   });
