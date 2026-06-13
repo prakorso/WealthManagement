@@ -2317,14 +2317,17 @@ function renderPerkasaPanel(){
       <div id="sync-toast" class="toast" style="margin-top:8px"></div>
     </div>`;
   }
-  const histRows = (p.history||[]).slice().reverse().map(h=>`
-    <tr>
-      <td class="td-mono" style="white-space:nowrap">${h.tglJual||'—'}</td>
-      <td style="font-weight:500">${h.nama}</td>
-      <td><span class="chip neu" style="font-size:10px">${h.jenis||'—'}</span></td>
-      <td style="text-align:right;font-family:var(--mono)">${fRp(h.hargaJual)}</td>
-      <td style="text-align:right;font-family:var(--mono);color:var(--green)">+${fRp(h.profit)}</td>
-    </tr>`).join('');
+  const histRows = (p.history||[]).slice().reverse().map(h=>{
+    const diterima = (h.modalPanji||0)+(h.profit||0);
+    return `<tr>
+      <td class="td-mono" style="white-space:nowrap;font-size:11px">${h.tglMasuk||'—'}</td>
+      <td class="td-mono" style="white-space:nowrap;font-size:11px">${h.tglJual||'—'}</td>
+      <td style="font-weight:500">${h.nama}<br><span style="font-size:10px;color:var(--t3)">${h.jenis||''}</span></td>
+      <td style="text-align:right;font-family:var(--mono);color:var(--rose)">${fRp(h.modalPanji||0)}</td>
+      <td style="text-align:right;font-family:var(--mono);color:var(--teal)">${fRp(diterima)}</td>
+      <td style="text-align:right;font-family:var(--mono);color:var(--green)">+${fRp(h.profit||0)}</td>
+    </tr>`;
+  }).join('');
   const aktifRows = (p.aktifList||[]).map(a=>`
     <tr>
       <td style="font-weight:500">${a.nama}</td>
@@ -2362,9 +2365,9 @@ function renderPerkasaPanel(){
   </div>`:''}
 
   ${histRows?`<div class="card">
-    <div class="card-title">Riwayat Penjualan — Profit Panji</div>
+    <div class="card-title">Riwayat Penjualan — Siklus Modal Panji</div>
     <div class="tbl-wrap"><div class="tbl-scroll"><table>
-      <thead><tr><th>Tgl Jual</th><th>Unit</th><th>Jenis</th><th style="text-align:right">Harga Jual</th><th style="text-align:right">Profit</th></tr></thead>
+      <thead><tr><th>Tgl Masuk</th><th>Tgl Jual</th><th>Unit</th><th style="text-align:right">Modal Keluar</th><th style="text-align:right">Diterima Kembali</th><th style="text-align:right">Net Profit</th></tr></thead>
       <tbody>${histRows}</tbody>
     </table></div></div>
   </div>`:''}
@@ -2402,75 +2405,116 @@ async function syncPerkasa(){
     const r = await fetch(`${WEB_URL}?action=syncPerkasa`,{signal:AbortSignal.timeout(30000)});
     const d = await r.json();
     if(d.success && d.perkasa){
-      const newHistory = d.perkasa.history || [];
+      const newHistory  = d.perkasa.history  || [];
+      const newAktif    = d.perkasa.aktifList || [];
       const isFirstSync = !STATE.perkasa;
+      const akun        = STATE.config.akun_default || getRekening()[0] || '';
 
-      // Load processed sale keys (tglJual|nama) stored in config
+      // ── helper: parse tgl string → {tanggal, bln, thn} ──
+      function parseTgl(s){
+        if(!s) return null;
+        if(/^\d{2}\/\d{2}\/\d{4}$/.test(s)){
+          const [dd,mm,yy]=s.split('/');
+          return {tanggal:s, bln:BULAN_LIST[parseInt(mm)-1], thn:yy};
+        }
+        if(/^\d{4}-\d{2}-\d{2}$/.test(s)){
+          const [yy,mm,dd]=s.split('-');
+          return {tanggal:dd+'/'+mm+'/'+yy, bln:BULAN_LIST[parseInt(mm)-1], thn:yy};
+        }
+        const now=new Date();
+        return {tanggal:String(now.getDate()).padStart(2,'0')+'/'+String(now.getMonth()+1).padStart(2,'0')+'/'+now.getFullYear(), bln:BULAN_LIST[now.getMonth()], thn:String(now.getFullYear())};
+      }
+
+      // ── Load processed keys for sales (pemasukan) & modal out (pengeluaran) ──
       let processedKeys = [];
+      let modalOutKeys  = [];
       try{ processedKeys = JSON.parse(STATE.config.perkasa_processed||'[]'); }catch(e){}
+      try{ modalOutKeys  = JSON.parse(STATE.config.perkasa_modal_out||'[]'); }catch(e){}
+
+      // All units = aktif + sold (for pengeluaran tracking)
+      const allUnits = [
+        ...newAktif.map(a=>({nama:a.nama, tglMasuk:a.tglMasuk||'', modalPanji:a.modal||0})),
+        ...newHistory.map(h=>({nama:h.nama, tglMasuk:h.tglMasuk||'', modalPanji:h.modalPanji||0}))
+      ];
 
       if(isFirstSync){
-        // Seed all existing history as already-processed (no cashflow for past sales)
-        const seedKeys = newHistory.map(h=>`${h.tglJual}|${h.nama}`);
-        if(seedKeys.length){
-          STATE.config.perkasa_processed = JSON.stringify(seedKeys);
-          callSheet({action:'setConfig',key:'perkasa_processed',value:JSON.stringify(seedKeys)}).catch(()=>{});
-        }
+        // Seed all existing as processed — no backfill for historical data
+        const seedSales  = newHistory.map(h=>`${h.tglJual}|${h.nama}`);
+        const seedModal  = allUnits.map(u=>`${u.tglMasuk}|${u.nama}`);
+        STATE.config.perkasa_processed  = JSON.stringify(seedSales);
+        STATE.config.perkasa_modal_out  = JSON.stringify(seedModal);
+        callSheet({action:'setConfig',key:'perkasa_processed', value:JSON.stringify(seedSales)}).catch(()=>{});
+        callSheet({action:'setConfig',key:'perkasa_modal_out',  value:JSON.stringify(seedModal)}).catch(()=>{});
       } else {
-        // Detect genuinely new sales not seen before
+        let toastParts = [];
+
+        // ── A) New modal OUT (pengeluaran) — unit baru masuk Perkasa ──
+        const newModalOut = allUnits.filter(u=>u.modalPanji>0 && !modalOutKeys.includes(`${u.tglMasuk}|${u.nama}`));
+        for(const u of newModalOut){
+          const t = parseTgl(u.tglMasuk);
+          if(!t) continue;
+          const tx={
+            id:'tx_'+Date.now()+'_'+Math.random().toString(36).slice(2,5),
+            tanggal:t.tanggal, tipe:'pengeluaran',
+            deskripsi:'Modal Perkasa Motors — '+u.nama,
+            kategori:'Bisnis', subkategori:'Perkasa Motors',
+            nominal:u.modalPanji, akun,
+            bulan:t.bln, tahun:t.thn,
+            periodeBulan:t.bln, periodeTahun:t.thn,
+            catatan:'Auto-sync Perkasa · modal keluar'
+          };
+          STATE.transactions.push(tx);
+          await callSheet({action:'addTransaction',...tx});
+        }
+        if(newModalOut.length){
+          const totalOut = newModalOut.reduce((s,u)=>s+u.modalPanji,0);
+          const newOutKeys = [...modalOutKeys,...newModalOut.map(u=>`${u.tglMasuk}|${u.nama}`)];
+          STATE.config.perkasa_modal_out = JSON.stringify(newOutKeys);
+          callSheet({action:'setConfig',key:'perkasa_modal_out',value:JSON.stringify(newOutKeys)}).catch(()=>{});
+          toastParts.push(`${newModalOut.length} unit baru keluar ${fRp(totalOut)}`);
+        }
+
+        // ── B) New sales (pemasukan) — unit terjual ──
         const newSales = newHistory.filter(h=>!processedKeys.includes(`${h.tglJual}|${h.nama}`));
-
+        for(const sale of newSales){
+          if(!sale.hargaJual || sale.hargaJual<=0) continue;
+          const t = parseTgl(sale.tglJual);
+          if(!t) continue;
+          const modalPanji    = sale.modalPanji||0;
+          const bagiPanji     = sale.profit||0;
+          const totalDiterima = modalPanji + bagiPanji;
+          const tx={
+            id:'tx_'+Date.now()+'_'+Math.random().toString(36).slice(2,5),
+            tanggal:t.tanggal, tipe:'pemasukan',
+            deskripsi:'Hasil jual '+sale.nama+' — Perkasa Motors',
+            kategori:'Bisnis', subkategori:'Perkasa Motors',
+            nominal:totalDiterima, akun,
+            bulan:t.bln, tahun:t.thn,
+            periodeBulan:t.bln, periodeTahun:t.thn,
+            catatan:'Modal balik Rp'+modalPanji.toLocaleString('id-ID')+' + Profit Rp'+bagiPanji.toLocaleString('id-ID')
+          };
+          STATE.transactions.push(tx);
+          await callSheet({action:'addTransaction',...tx});
+        }
         if(newSales.length){
-          const akun = STATE.config.akun_default || getRekening()[0] || '';
-
-          for(const sale of newSales){
-            if(!sale.hargaJual || sale.hargaJual<=0) continue;
-            // Parse tglJual (dd/mm/yyyy or yyyy-mm-dd) → cashflow fields
-            let tanggal, saleBln, saleThn;
-            if(/^\d{2}\/\d{2}\/\d{4}$/.test(sale.tglJual)){
-              const [dd,mm,yy]=sale.tglJual.split('/');
-              tanggal=sale.tglJual; saleBln=BULAN_LIST[parseInt(mm)-1]; saleThn=yy;
-            } else if(/^\d{4}-\d{2}-\d{2}$/.test(sale.tglJual)){
-              const [yy,mm,dd]=sale.tglJual.split('-');
-              tanggal=dd+'/'+mm+'/'+yy; saleBln=BULAN_LIST[parseInt(mm)-1]; saleThn=yy;
-            } else {
-              const now=new Date();
-              saleBln=BULAN_LIST[now.getMonth()]; saleThn=String(now.getFullYear());
-              tanggal=String(now.getDate()).padStart(2,'0')+'/'+String(now.getMonth()+1).padStart(2,'0')+'/'+saleThn;
-            }
-            const modalPanji = sale.modalPanji||0;
-            const bagiPanji  = sale.profit||0;
-            const totalDiterima = modalPanji + bagiPanji;
-            const tx={
-              id:'tx_'+Date.now()+'_'+Math.random().toString(36).slice(2,5),
-              tanggal, tipe:'pemasukan',
-              deskripsi:'Hasil jual '+sale.nama+' — Perkasa Motors',
-              kategori:'Bisnis', subkategori:'Perkasa Motors',
-              nominal:totalDiterima, akun,
-              bulan:saleBln, tahun:saleThn,
-              periodeBulan:saleBln, periodeTahun:saleThn,
-              catatan:'Modal balik Rp'+modalPanji.toLocaleString('id-ID')+' + Profit Rp'+bagiPanji.toLocaleString('id-ID')
-            };
-            STATE.transactions.push(tx);
-            await callSheet({action:'addTransaction',...tx});
-          }
-
-          // Save updated processed keys
-          const allKeys=[...processedKeys,...newSales.map(h=>`${h.tglJual}|${h.nama}`)];
-          STATE.config.perkasa_processed=JSON.stringify(allKeys);
+          const totalMasuk = newSales.reduce((s,x)=>s+((x.modalPanji||0)+(x.profit||0)),0);
+          const allKeys    = [...processedKeys,...newSales.map(h=>`${h.tglJual}|${h.nama}`)];
+          STATE.config.perkasa_processed = JSON.stringify(allKeys);
           callSheet({action:'setConfig',key:'perkasa_processed',value:JSON.stringify(allKeys)}).catch(()=>{});
+          toastParts.push(`${newSales.length} terjual +${fRp(totalMasuk)} masuk`);
+        }
 
-          const totalDiterima=newSales.reduce((s,x)=>s+(( x.modalPanji||0)+(x.profit||0)),0);
-          showToast('sync-toast',`✓ Sync berhasil! ${newSales.length} penjualan baru · +${fRp(totalDiterima)} masuk Cashflow (modal balik + profit)`,'ok',7000);
+        if(toastParts.length){
+          showToast('sync-toast','✓ Sync berhasil! '+toastParts.join(' · '),'ok',7000);
         } else {
-          showToast('sync-toast','✓ Sync berhasil! Tidak ada penjualan baru. Modal aktif '+fRp(d.perkasa.modalAktif),'ok',5000);
+          showToast('sync-toast','✓ Sync berhasil! Tidak ada perubahan baru. Modal aktif '+fRp(d.perkasa.modalAktif),'ok',5000);
         }
       }
 
       STATE.perkasa = d.perkasa;
       await loadSheet();
       renderPage('bisnis');
-      if(isFirstSync) showToast('sync-toast','✓ Sync pertama berhasil! Modal aktif '+fRp(d.perkasa.modalAktif)+'. Penjualan berikutnya akan otomatis masuk cashflow.','ok',7000);
+      if(isFirstSync) showToast('sync-toast','✓ Sync pertama berhasil! Modal aktif '+fRp(d.perkasa.modalAktif)+'. Unit & penjualan baru akan otomatis masuk cashflow.','ok',7000);
     } else {
       if(btn){btn.disabled=false;btn.innerHTML='<i class="ti ti-refresh"></i> Sync';}
       showToast('sync-toast','⚠ Gagal sync: '+(d.error||'unknown'),'err',6000);
