@@ -2477,7 +2477,7 @@ async function syncPerkasa(){
         // ── B) New sales (pemasukan) — unit terjual ──
         const newSales = newHistory.filter(h=>!processedKeys.includes(`${h.tglJual}|${h.nama}`));
         for(const sale of newSales){
-          if(!sale.hargaJual || sale.hargaJual<=0) continue;
+          if((sale.modalPanji||0)+(sale.profit||0)<=0) continue;
           const t = parseTgl(sale.tglJual);
           if(!t) continue;
           const modalPanji    = sale.modalPanji||0;
