@@ -2441,12 +2441,12 @@ async function syncPerkasa(){
             const tx={
               id:'tx_'+Date.now()+'_'+Math.random().toString(36).slice(2,5),
               tanggal, tipe:'pemasukan',
-              deskripsi:'Hasil jual '+sale.nama+' — Perkasa Motors',
+              deskripsi:'Profit jual '+sale.nama+' — Perkasa Motors',
               kategori:'Bisnis', subkategori:'Perkasa Motors',
-              nominal:sale.hargaJual, akun,
+              nominal:sale.profit||0, akun,
               bulan:saleBln, tahun:saleThn,
               periodeBulan:saleBln, periodeTahun:saleThn,
-              catatan:'Auto-sync Perkasa · Profit Rp'+Number(sale.profit||0).toLocaleString('id-ID')
+              catatan:'Auto-sync Perkasa · Harga jual Rp'+Number(sale.hargaJual||0).toLocaleString('id-ID')
             };
             STATE.transactions.push(tx);
             await callSheet({action:'addTransaction',...tx});
@@ -2457,8 +2457,8 @@ async function syncPerkasa(){
           STATE.config.perkasa_processed=JSON.stringify(allKeys);
           callSheet({action:'setConfig',key:'perkasa_processed',value:JSON.stringify(allKeys)}).catch(()=>{});
 
-          const totalMasuk=newSales.reduce((s,x)=>s+(x.hargaJual||0),0);
-          showToast('sync-toast',`✓ Sync berhasil! ${newSales.length} penjualan baru · +${fRp(totalMasuk)} masuk Cashflow`,'ok',7000);
+          const totalProfit=newSales.reduce((s,x)=>s+(x.profit||0),0);
+          showToast('sync-toast',`✓ Sync berhasil! ${newSales.length} penjualan baru · +${fRp(totalProfit)} profit masuk Cashflow`,'ok',7000);
         } else {
           showToast('sync-toast','✓ Sync berhasil! Tidak ada penjualan baru. Modal aktif '+fRp(d.perkasa.modalAktif),'ok',5000);
         }
