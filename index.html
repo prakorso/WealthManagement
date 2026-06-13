@@ -2438,15 +2438,18 @@ async function syncPerkasa(){
               saleBln=BULAN_LIST[now.getMonth()]; saleThn=String(now.getFullYear());
               tanggal=String(now.getDate()).padStart(2,'0')+'/'+String(now.getMonth()+1).padStart(2,'0')+'/'+saleThn;
             }
+            const modalPanji = sale.modalPanji||0;
+            const bagiPanji  = sale.profit||0;
+            const totalDiterima = modalPanji + bagiPanji;
             const tx={
               id:'tx_'+Date.now()+'_'+Math.random().toString(36).slice(2,5),
               tanggal, tipe:'pemasukan',
-              deskripsi:'Profit jual '+sale.nama+' — Perkasa Motors',
+              deskripsi:'Hasil jual '+sale.nama+' — Perkasa Motors',
               kategori:'Bisnis', subkategori:'Perkasa Motors',
-              nominal:sale.profit||0, akun,
+              nominal:totalDiterima, akun,
               bulan:saleBln, tahun:saleThn,
               periodeBulan:saleBln, periodeTahun:saleThn,
-              catatan:'Auto-sync Perkasa · Harga jual Rp'+Number(sale.hargaJual||0).toLocaleString('id-ID')
+              catatan:'Modal balik Rp'+modalPanji.toLocaleString('id-ID')+' + Profit Rp'+bagiPanji.toLocaleString('id-ID')
             };
             STATE.transactions.push(tx);
             await callSheet({action:'addTransaction',...tx});
@@ -2457,8 +2460,8 @@ async function syncPerkasa(){
           STATE.config.perkasa_processed=JSON.stringify(allKeys);
           callSheet({action:'setConfig',key:'perkasa_processed',value:JSON.stringify(allKeys)}).catch(()=>{});
 
-          const totalProfit=newSales.reduce((s,x)=>s+(x.profit||0),0);
-          showToast('sync-toast',`✓ Sync berhasil! ${newSales.length} penjualan baru · +${fRp(totalProfit)} profit masuk Cashflow`,'ok',7000);
+          const totalDiterima=newSales.reduce((s,x)=>s+(( x.modalPanji||0)+(x.profit||0)),0);
+          showToast('sync-toast',`✓ Sync berhasil! ${newSales.length} penjualan baru · +${fRp(totalDiterima)} masuk Cashflow (modal balik + profit)`,'ok',7000);
         } else {
           showToast('sync-toast','✓ Sync berhasil! Tidak ada penjualan baru. Modal aktif '+fRp(d.perkasa.modalAktif),'ok',5000);
         }
