@@ -734,11 +734,12 @@ function calcNetWorth(){
     ? STATE.perkasa.modalAktif
     : STATE.aset.filter(a=>a.kategori==='Bisnis' && a.nama==='Perkasa Motors').reduce((a,x)=>a+(x.nilaiSaatIni||x.modal),0);
   const bisnisVal = asetBisnisManual + perkasaVal;
+  const cashVal = (typeof calcAvailableCash==='function') ? Math.max(0, calcAvailableCash()) : 0;
   const totalInv = portVal + dcaVal;
-  const totalAset = totalInv + asetVal + bisnisVal;
+  const totalAset = totalInv + asetVal + bisnisVal + cashVal;
   const totalHutang = (STATE.liabilities||[]).reduce((a,l)=>a+(l.sisaPokok||0),0);
   const netWorth = totalAset - totalHutang;
-  return {netWorth,totalInv,portVal,dcaVal,asetVal,bisnisVal,totalAset,totalHutang};
+  return {netWorth,totalInv,portVal,dcaVal,asetVal,bisnisVal,cashVal,totalAset,totalHutang};
 }
 
 // ── Asset Allocation by macro category (Cash/Stocks/Crypto/Business/Property) ──
