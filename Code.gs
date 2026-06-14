@@ -272,22 +272,36 @@ function dailySnapshot() {
 // ════════════════════════════════════════════════════════════
 //  PERKASA MOTORS SYNC — baca endpoint induk, simpan ke Perkasa_Sync
 // ════════════════════════════════════════════════════════════
-const PERKASA_URL = 'https://script.google.com/macros/s/AKfycbwY-188f1lAHKuTTNrzzyESmq0S2wzrf_jIs-1K6xbaI-U-1GUo3Dh7Ic68MDFyULhJDg/exec';
+const PERKASA_SUPABASE_URL  = 'https://pefkfuoowzfnbkmygzxo.supabase.co/rest/v1/units?select=*&order=id.asc';
+const PERKASA_SUPABASE_KEY  = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBlZmtmdW9vd3pmbmJrbXlnenhvIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODEzOTA2MjIsImV4cCI6MjA5Njk2NjYyMn0.vMlXRGlYEe2r5N7UlO7MKqJZ_l2a8hwiO1nN_G3zf04';
 
 function syncPerkasaMotors() {
   const ss = SS();
-  const resp = UrlFetchApp.fetch(PERKASA_URL, {muteHttpExceptions:true, followRedirects:true});
+  const resp = UrlFetchApp.fetch(PERKASA_SUPABASE_URL, {
+    muteHttpExceptions: true,
+    headers: { apikey: PERKASA_SUPABASE_KEY, Authorization: 'Bearer ' + PERKASA_SUPABASE_KEY }
+  });
   if (resp.getResponseCode() !== 200) throw new Error('HTTP ' + resp.getResponseCode());
-  const data = JSON.parse(resp.getContentText());
-  if (!data.ok || !Array.isArray(data.units)) throw new Error('Format tidak valid');
+  const units = JSON.parse(resp.getContentText());
+  if (!Array.isArray(units)) throw new Error('Format tidak valid — bukan array');
 
   let modalAktif = 0, totalProfit = 0, unitAktif = 0, unitTerjual = 0;
-  const aktifList = [];   // unit yang modalnya sedang nyangkut
-  const history   = [];   // unit terjual: tanggal jual + profit Panji
+  const aktifList = [];
+  const history   = [];
 
-  data.units.forEach(u => {
-    const mPanji = parseNum(u.panji && u.panji.total != null ? u.panji.total : u.modalPanji);
-    const bagiPanji = parseNum(u.bagiPanji);
+  units.forEach(u => {
+    // Modal Panji = SUM(biaya_panji[].nominal)
+    const biayaPanji = Array.isArray(u.biaya_panji) ? u.biaya_panji : [];
+    const mPanji = biayaPanji.reduce((s, b) => s + parseNum(b.nominal), 0);
+
+    // Profit Panji: pakai override bagi_panji kalau ada, else hitung dari formula
+    let bagiPanji = 0;
+    if (u.bagi_panji != null && parseNum(u.bagi_panji) > 0) {
+      bagiPanji = parseNum(u.bagi_panji);
+    } else if (String(u.status) === 'terjual' && parseNum(u.keuntungan_bersih) > 0) {
+      bagiPanji = Math.round(parseNum(u.keuntungan_bersih) * 0.9 * 0.5);
+    }
+
     if (String(u.status) === 'aktif') {
       if (mPanji > 0) {
         modalAktif += mPanji;
@@ -298,7 +312,8 @@ function syncPerkasaMotors() {
       unitTerjual++;
       if (bagiPanji > 0) {
         totalProfit += bagiPanji;
-        history.push({nama:u.nama, jenis:u.jenis, profit:bagiPanji, modalPanji:mPanji, tglJual:u.tglJual||'', tglMasuk:u.tgl||'', hargaJual:parseNum(u.hargaJual)});
+        history.push({nama:u.nama, jenis:u.jenis, profit:bagiPanji, modalPanji:mPanji,
+          tglJual:u.tgl_jual||'', tglMasuk:u.tgl||'', hargaJual:parseNum(u.harga_jual)});
       }
     }
   });

@@ -1459,10 +1459,10 @@ function openAddRencana(){
       </div>
     </div>
     <div style="font-size:11px;color:var(--t3);margin-bottom:12px">Rencana ini akan disimpan untuk ${bln} ${thn}. Klik <strong>Realisasi</strong> saat transaksi benar-benar terjadi.</div>
+    <button class="btn btn-gold btn-full" onclick="saveRencana('${bln}','${thn}')"><i class="ti ti-check"></i> Simpan Rencana</button>
     <div id="modal-toast" class="toast"></div>
   `;
   openModal();
-  document.getElementById('modal-save').onclick = ()=>saveRencana(bln,thn);
 }
 
 function onRnTipeChange(){
