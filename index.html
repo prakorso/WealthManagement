@@ -543,7 +543,7 @@ const K = {PASS:'ft_pass',SESS:'ft_sess',SNAP:'ft_snap',SHARGA:'ft_sh'};
 let STATE = {
   transactions: [], budget: [], btcDca: [], investasi: [],
   aset: [], goals: [], snapshots: [], config: {}, hargaCache: {},
-  commitments: [], liabilities: [], subscriptions: [], perkasa: null,
+  commitments: [], liabilities: [], subscriptions: [], perkasa: null, rencana: [],
   btcPrice: null, sahamLive: {}
 };
 
@@ -630,6 +630,7 @@ async function loadSheet(){
     if(d.aset?.length)         STATE.aset = d.aset;
     if(d.commitments?.length)  STATE.commitments = d.commitments;
     if(d.liabilities?.length)  STATE.liabilities = d.liabilities;
+    if(d.rencana?.length) STATE.rencana = d.rencana;
     if(d.subscriptions?.length) STATE.subscriptions = d.subscriptions;
     if(d.perkasa)              STATE.perkasa = d.perkasa;
     if(d.goals?.length)        STATE.goals = d.goals;
@@ -1332,6 +1333,7 @@ function pageCashflow(){
     <div id="tx-toast" class="toast"></div>
   </div>
 
+  ${renderRencanaSection(bln,thn)}
   <div class="stat-grid" style="margin-bottom:14px">
     <div class="stat teal"><div class="stat-lbl">Available Cash</div><div class="stat-val teal">${fRp(calcAvailableCash())}</div><div class="stat-hint">Total saldo rekening aktif</div></div>
     <div class="stat"><div class="stat-lbl">Income</div><div class="stat-val green">${fRp(cf.income)}</div><div class="stat-hint">Periode terpilih</div></div>
@@ -1375,6 +1377,163 @@ function renderTxRows(txs){
         <button class="btn btn-ghost btn-xs" style="color:var(--rose)" onclick="deleteTx('${t.id}')" title="Hapus"><i class="ti ti-trash"></i></button>
       </div></td>
     </tr>`).join('');
+}
+
+function renderRencanaSection(bln, thn){
+  const items = (STATE.rencana||[]).filter(r=>r.bulan===bln&&r.tahun===thn);
+  const pending = items.filter(r=>r.status==='pending');
+  const done = items.filter(r=>r.status==='done');
+  const liabs = STATE.liabilities||[];
+
+  const rows = items.map(r=>{
+    const isDone = r.status==='done';
+    const isCicilan = r.tipe==='cicilan';
+    const liabName = isCicilan ? (liabs.find(l=>l.id===r.liabilityId)?.nama||'—') : '';
+    const tipeColor = r.tipe==='pemasukan'?'var(--green)':r.tipe==='cicilan'?'var(--gold)':'var(--rose)';
+    const tipeLabel = isCicilan ? `Cicilan — ${liabName}` : r.tipe;
+    return `<tr style="${isDone?'opacity:0.5':''}">
+      <td style="font-weight:500">${r.deskripsi||'—'}</td>
+      <td><span class="chip neu" style="font-size:10px">${r.kategori||'—'}</span></td>
+      <td style="font-size:11px;color:${tipeColor}">${tipeLabel}</td>
+      <td style="font-family:var(--mono);font-size:12px;color:${tipeColor};text-align:right;white-space:nowrap">${r.tipe==='pemasukan'?'+':'-'}${fRp(r.nominal)}</td>
+      <td style="font-size:11px;color:var(--t3)">${r.akun||'—'}</td>
+      <td>
+        ${isDone
+          ? `<span class="chip up" style="font-size:10px">✓ Terealisasi</span>`
+          : `<button class="btn btn-sm btn-teal" onclick="realisasiRencana('${r.id}')" style="font-size:11px;padding:3px 10px"><i class="ti ti-check"></i> Realisasi</button>`
+        }
+        ${!isDone ? `<button class="btn btn-ghost btn-xs" style="color:var(--rose);margin-left:4px" onclick="deleteRencana('${r.id}')"><i class="ti ti-trash"></i></button>` : ''}
+      </td>
+    </tr>`;
+  }).join('');
+
+  return `<div class="card" style="margin-bottom:14px;border-color:var(--gold-bd)">
+    <div class="card-title">
+      📋 Rencana ${bln} ${thn}
+      <span style="font-size:11px;color:var(--t3);font-weight:400">${pending.length} pending · ${done.length} terealisasi</span>
+      <button class="btn btn-sm btn-gold" onclick="openAddRencana()"><i class="ti ti-plus"></i> Tambah Rencana</button>
+    </div>
+    ${items.length===0
+      ? `<div style="text-align:center;padding:20px;color:var(--t3);font-size:13px">Belum ada rencana bulan ini. Klik <strong>Tambah Rencana</strong> untuk mulai.</div>`
+      : `<div class="tbl-wrap"><div class="tbl-scroll"><table>
+          <thead><tr><th>Rencana</th><th>Kategori</th><th>Tipe</th><th style="text-align:right">Nominal</th><th>Rekening</th><th></th></tr></thead>
+          <tbody>${rows}</tbody>
+        </table></div></div>`
+    }
+    <div id="rencana-toast" class="toast" style="margin-top:8px"></div>
+  </div>`;
+}
+
+function openAddRencana(){
+  const bln = document.getElementById('filter-bln')?.value || nowMonth();
+  const thn = nowYear();
+  const liabs = STATE.liabilities||[];
+  const reks = getRekening();
+  document.getElementById('modal-title').textContent = 'Tambah Rencana Transaksi';
+  document.getElementById('modal-body').innerHTML = `
+    <div class="fgrid fgrid-2" style="margin-bottom:10px">
+      <div class="fg">
+        <label>Tipe</label>
+        <select id="rn-tipe" onchange="onRnTipeChange()">
+          <option value="pemasukan">📥 Pemasukan</option>
+          <option value="pengeluaran">📤 Pengeluaran</option>
+          <option value="cicilan">🏦 Cicilan Utang</option>
+        </select>
+      </div>
+      <div class="fg">
+        <label>Rekening</label>
+        <select id="rn-akun">${reks.map(r=>`<option>${r}</option>`).join('')}</select>
+      </div>
+    </div>
+    <div class="fgrid fgrid-2" style="margin-bottom:10px">
+      <div class="fg"><label>Deskripsi</label><input type="text" id="rn-desk" placeholder="Gaji Juni, Cicilan BPKB, dst"/></div>
+      <div class="fg"><label>Nominal (Rp)</label><input type="number" id="rn-nom" placeholder="8500000"/></div>
+    </div>
+    <div class="fgrid fgrid-2" style="margin-bottom:10px">
+      <div class="fg"><label>Kategori</label><input type="text" id="rn-kat" placeholder="Gaji, Bisnis, Cicilan, dll"/></div>
+      <div class="fg" id="rn-liab-wrap" style="display:none">
+        <label>Pilih Utang</label>
+        <select id="rn-liab">
+          ${liabs.map(l=>`<option value="${l.id}">${l.nama} (sisa ${fRp(l.sisaPokok)})</option>`).join('')}
+        </select>
+      </div>
+    </div>
+    <div style="font-size:11px;color:var(--t3);margin-bottom:12px">Rencana ini akan disimpan untuk ${bln} ${thn}. Klik <strong>Realisasi</strong> saat transaksi benar-benar terjadi.</div>
+    <div id="modal-toast" class="toast"></div>
+  `;
+  openModal();
+  document.getElementById('modal-save').onclick = ()=>saveRencana(bln,thn);
+}
+
+function onRnTipeChange(){
+  const tipe = document.getElementById('rn-tipe')?.value;
+  const liabWrap = document.getElementById('rn-liab-wrap');
+  if(liabWrap) liabWrap.style.display = tipe==='cicilan' ? '' : 'none';
+  if(tipe==='cicilan'){
+    const liab = STATE.liabilities?.find(l=>l.id===document.getElementById('rn-liab')?.value);
+    if(liab && !document.getElementById('rn-nom')?.value){
+      document.getElementById('rn-nom').value = liab.cicilanBulan||'';
+    }
+  }
+}
+
+async function saveRencana(bln,thn){
+  const tipe = document.getElementById('rn-tipe')?.value;
+  const desk = document.getElementById('rn-desk')?.value.trim();
+  const nom  = parseFloat(document.getElementById('rn-nom')?.value)||0;
+  const kat  = document.getElementById('rn-kat')?.value.trim();
+  const akun = document.getElementById('rn-akun')?.value;
+  const liabilityId = tipe==='cicilan' ? (document.getElementById('rn-liab')?.value||'') : '';
+
+  if(!desk||!nom){ showToast('modal-toast','Isi deskripsi dan nominal.','err'); return; }
+  if(tipe==='cicilan'&&!liabilityId){ showToast('modal-toast','Pilih utang yang akan dicicil.','err'); return; }
+
+  const r={id:'rn_'+Date.now(),bulan:bln,tahun:thn,tipe,deskripsi:desk,kategori:kat,nominal:nom,akun,liabilityId,status:'pending',txId:''};
+  if(!STATE.rencana) STATE.rencana=[];
+  STATE.rencana.push(r);
+  closeModal();
+  renderPage('cashflow');
+  await callSheet({action:'addRencana',...r});
+}
+
+async function realisasiRencana(id){
+  const r = (STATE.rencana||[]).find(x=>x.id===id);
+  if(!r) return;
+  const t = new Date();
+  const tgl = today();
+  const bln = r.bulan; const thn = r.tahun;
+  const txTipe = r.tipe==='pemasukan' ? 'pemasukan' : 'pengeluaran';
+  const kat = r.tipe==='cicilan' ? 'Cicilan & Tagihan' : (r.kategori||'Bisnis');
+  const tx = {
+    id:'tx_'+Date.now()+'_'+Math.random().toString(36).slice(2,5),
+    tanggal:tgl, tipe:txTipe, deskripsi:r.deskripsi, kategori:kat,
+    subkategori: r.tipe==='cicilan'?'Cicilan':r.kategori||'',
+    nominal:r.nominal, akun:r.akun, bulan:bln, tahun:thn,
+    periodeBulan:bln, periodeTahun:thn,
+    catatan:'Realisasi rencana'+(r.tipe==='cicilan'?' — cicilan utang':'')
+  };
+  STATE.transactions.push(tx);
+  r.status='done'; r.txId=tx.id;
+  // Kalau cicilan → kurangi sisa pokok liability
+  if(r.tipe==='cicilan' && r.liabilityId){
+    const l = (STATE.liabilities||[]).find(x=>x.id===r.liabilityId);
+    if(l){
+      const newSisa = Math.max(0, (l.sisaPokok||0) - r.nominal);
+      l.sisaPokok = newSisa;
+      callSheet({action:'updateLiability',...l}).catch(()=>{});
+    }
+  }
+  renderPage('cashflow');
+  await callSheet({action:'addTransaction',...tx});
+  await callSheet({action:'updateRencana',id:r.id,status:'done',txId:tx.id});
+  showToast('rencana-toast','✓ Terealisasi! Transaksi dicatat.','ok',4000);
+}
+
+async function deleteRencana(id){
+  if(!confirm('Hapus rencana ini?')) return;
+  STATE.rencana = (STATE.rencana||[]).filter(x=>x.id!==id);
+  renderPage('cashflow');
+  await callSheet({action:'deleteRencana',id});
 }
 
 let currTxType = 'pengeluaran';

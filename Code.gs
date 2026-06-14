@@ -63,6 +63,7 @@ function initSheets() {
   getSheet(ss, 'Subscriptions',['id','nama','nominal','billing_date','kategori','keterangan','aktif']);
   getSheet(ss, 'Liabilities',  ['id','nama','total_pinjaman','sisa_pokok','cicilan_bulan','kreditur','catatan','tanggal_update']);
   getSheet(ss, 'Config',       ['key','value']);
+  getSheet(ss, 'Rencana', ['id','bulan','tahun','tipe','deskripsi','kategori','nominal','akun','liability_id','status','tx_id']);
 
   // Seed default cash accounts kalau masih kosong
   const ca = ss.getSheetByName('Cash_Accounts');
@@ -547,7 +548,20 @@ function doGet(e) {
           });
         });
 
-      return out({ transactions, budget, btcDca, investasi, aset, goals, snapshots, config, hargaCache, cashAccounts, commitments, liabilities, subscriptions, perkasa });
+      // Rencana
+      const rencana = [];
+      getSheet(ss, 'Rencana', ['id','bulan','tahun','tipe','deskripsi','kategori','nominal','akun','liability_id','status','tx_id']).getDataRange().getValues()
+        .forEach((r, i) => {
+          if (i === 0 || !r[0]) return;
+          rencana.push({
+            id: String(r[0]), bulan: String(r[1]||''), tahun: String(r[2]||''),
+            tipe: String(r[3]||''), deskripsi: String(r[4]||''), kategori: String(r[5]||''),
+            nominal: parseNum(r[6]), akun: String(r[7]||''), liabilityId: String(r[8]||''),
+            status: String(r[9]||'pending'), txId: String(r[10]||'')
+          });
+        });
+
+      return out({ transactions, budget, btcDca, investasi, aset, goals, snapshots, config, hargaCache, cashAccounts, commitments, liabilities, subscriptions, perkasa, rencana });
     }
 
     return out({ error: 'Unknown action: ' + action });
@@ -820,6 +834,36 @@ function handleWrite(ss, data) {
     }
     if (action === 'deleteSubscription') {
       const sh = getSheet(ss, 'Subscriptions', ['id','nama','nominal','billing_date','kategori','keterangan','aktif']);
+      const vals = sh.getDataRange().getValues();
+      for (let i = 1; i < vals.length; i++) {
+        if (String(vals[i][0]) === String(data.id)) { sh.deleteRow(i+1); return out({ success: true }); }
+      }
+      return out({ success: false, error: 'Not found' });
+    }
+
+    // ── Rencana Transaksi ──────────────────────────────────
+    if (action === 'addRencana') {
+      const sh = getSheet(ss, 'Rencana', ['id','bulan','tahun','tipe','deskripsi','kategori','nominal','akun','liability_id','status','tx_id']);
+      const id = data.id || ('rn_' + Date.now());
+      sh.appendRow([id, data.bulan, data.tahun, data.tipe, data.deskripsi, data.kategori||'', data.nominal, data.akun||'', data.liabilityId||'', 'pending', '']);
+      return out({ success: true, id });
+    }
+
+    if (action === 'updateRencana') {
+      const sh = getSheet(ss, 'Rencana', ['id','bulan','tahun','tipe','deskripsi','kategori','nominal','akun','liability_id','status','tx_id']);
+      const vals = sh.getDataRange().getValues();
+      for (let i = 1; i < vals.length; i++) {
+        if (String(vals[i][0]) === String(data.id)) {
+          if (data.status !== undefined) sh.getRange(i+1, 10).setValue(data.status);
+          if (data.txId !== undefined) sh.getRange(i+1, 11).setValue(data.txId);
+          return out({ success: true });
+        }
+      }
+      return out({ success: false, error: 'Not found' });
+    }
+
+    if (action === 'deleteRencana') {
+      const sh = getSheet(ss, 'Rencana', ['id','bulan','tahun','tipe','deskripsi','kategori','nominal','akun','liability_id','status','tx_id']);
       const vals = sh.getDataRange().getValues();
       for (let i = 1; i < vals.length; i++) {
         if (String(vals[i][0]) === String(data.id)) { sh.deleteRow(i+1); return out({ success: true }); }
