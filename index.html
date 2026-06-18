@@ -21,6 +21,7 @@
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet"/>
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@latest/dist/tabler-icons.min.css"/>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
 <style>
 :root{
   --bg:#08090b;--bg1:#0e1014;--bg2:#14161c;--bg3:#1c1f28;--bg4:#242834;
@@ -366,6 +367,8 @@ hr.dv{border:none;border-top:1px solid var(--border);margin:20px 0}
     <div class="lbox-logo">💼 Wealth Management</div>
     <div class="lbox-sub">Personal Finance Dashboard</div>
     <div class="lfg">
+      <label>Email</label>
+      <input type="email" id="l-email" placeholder="nama@email.com" autocomplete="email"/>
       <label>Password</label>
       <input type="password" id="l-pass" placeholder="••••••••" autocomplete="current-password"/>
     </div>
@@ -404,10 +407,10 @@ hr.dv{border:none;border-top:1px solid var(--border);margin:20px 0}
     </div>
     <div class="sidebar-footer">
       <div class="user-info" onclick="doLogout()">
-        <div class="avatar">P</div>
+        <div class="avatar" id="u-avatar">P</div>
         <div>
-          <div class="user-name">Prakorso</div>
-          <div class="user-role">Tap untuk logout</div>
+          <div class="user-name" id="u-name">User</div>
+          <div class="user-role" id="u-role">Tap untuk logout</div>
         </div>
       </div>
     </div>
@@ -503,6 +506,9 @@ hr.dv{border:none;border-top:1px solid var(--border);margin:20px 0}
 //  CONFIG
 // ════════════════════════════════════════════════════════════
 const WEB_URL = 'https://script.google.com/macros/s/AKfycbyihFTA5MH4Y4615LriwPB1JXbzrzPHNEyt83NR--__-hKJ0c_5jw9KevfgVWcbhZSi/exec';
+const SB_URL  = 'https://pefkfuoowzfnbkmygzxo.supabase.co';
+const SB_KEY  = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBlZmtmdW9vd3pmbmJrbXlnenhvIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODEzOTA2MjIsImV4cCI6MjA5Njk2NjYyMn0.vMlXRGlYEe2r5N7UlO7MKqJZ_l2a8hwiO1nN_G3zf04';
+const sb = supabase.createClient(SB_URL, SB_KEY);
 
 // DATA INVESTASI LAMA (BTC DCA dari sheet existing)
 const BASE_DCA = [
@@ -600,53 +606,324 @@ function showToast(id,msg,type,ms=4000){
 }
 
 // ════════════════════════════════════════════════════════════
-//  API CALLS
+//  SUPABASE API LAYER
 // ════════════════════════════════════════════════════════════
+async function sbq(table, query){
+  const {data,error} = await query;
+  if(error){ console.error('[sb]',table,error.message); return null; }
+  return data;
+}
+
 async function callSheet(payload){
+  const {action,...p} = payload;
   try{
-    const enc = encodeURIComponent(JSON.stringify(payload));
-    const r = await fetch(`${WEB_URL}?data=${enc}`,{signal:AbortSignal.timeout(20000)});
-    const d = await r.json();
-    if(d.error){ console.error('[sheet]',d.error); return {success:false,error:d.error}; }
-    console.log('[sheet] OK:',payload.action,d);
-    return d;
+    let res = {success:false};
+    const uid = (await sb.auth.getUser()).data?.user?.id;
+    if(!uid) return {success:false,error:'not logged in'};
+
+    if(action==='addTransaction'){
+      const d = new Date(tglToISO(p.tanggal));
+      const row = {
+        id: p.id||'tx'+Date.now(),
+        tanggal: tglToISO(p.tanggal),
+        tipe: p.tipe, deskripsi: p.deskripsi||'',
+        kategori: p.kategori||'', subkategori: p.subkategori||'',
+        nominal: p.nominal||0, akun: p.akun||'',
+        bulan: p.bulan||d.toLocaleString('id-ID',{month:'long'}),
+        tahun: p.tahun||String(d.getFullYear()),
+        catatan: p.catatan||'',
+        periode_bulan: p.periodeBulan||p.bulan||'',
+        periode_tahun: p.periodeTahun||p.tahun||''
+      };
+      const {error} = await sb.from('transactions').upsert(row);
+      res = {success:!error, id:row.id};
+    }
+    else if(action==='deleteTransaction'){
+      const {error} = await sb.from('transactions').delete().eq('id',p.id);
+      res = {success:!error};
+    }
+    else if(action==='editTransaction'){
+      const d = new Date(tglToISO(p.tanggal));
+      const row = {
+        tanggal: tglToISO(p.tanggal),
+        tipe: p.tipe, deskripsi: p.deskripsi||'',
+        kategori: p.kategori||'', subkategori: p.subkategori||'',
+        nominal: p.nominal||0, akun: p.akun||'',
+        bulan: p.bulan||d.toLocaleString('id-ID',{month:'long'}),
+        tahun: p.tahun||String(d.getFullYear()),
+        catatan: p.catatan||'',
+        periode_bulan: p.periodeBulan||p.bulan||'',
+        periode_tahun: p.periodeTahun||p.tahun||''
+      };
+      const {error} = await sb.from('transactions').update(row).eq('id',p.id);
+      res = {success:!error};
+    }
+    else if(action==='setBudget'){
+      const {error} = await sb.from('budget').upsert({
+        bulan:p.bulan, tahun:p.tahun, kategori:p.kategori,
+        tipe_kategori:p.tipe||'pengeluaran', alokasi:p.alokasi||0
+      },{onConflict:'user_id,bulan,tahun,kategori'});
+      res = {success:!error};
+    }
+    else if(action==='removeBudget'){
+      const {error} = await sb.from('budget').delete()
+        .eq('bulan',p.bulan).eq('tahun',p.tahun).eq('kategori',p.kategori);
+      res = {success:!error};
+    }
+    else if(action==='addBtcDca'){
+      const {error} = await sb.from('btc_dca').insert({
+        tanggal:tglToISO(p.tanggal), beli:p.beli, harga:p.harga
+      });
+      res = {success:!error};
+    }
+    else if(action==='editBtcDca'){
+      const row = STATE.btcDca[p.rowIndex];
+      if(!row) return {success:false};
+      const {error} = await sb.from('btc_dca').update({
+        tanggal:tglToISO(p.tanggal), beli:p.beli, harga:p.harga
+      }).eq('id',row.id);
+      res = {success:!error};
+    }
+    else if(action==='deleteBtcDca'){
+      const row = STATE.btcDca[p.rowIndex];
+      if(!row) return {success:false};
+      const {error} = await sb.from('btc_dca').delete().eq('id',row.id);
+      res = {success:!error};
+    }
+    else if(action==='addInvestasi'){
+      const {data,error} = await sb.from('investasi').insert({
+        tanggal:tglToISO(p.tanggal), kode:p.kode, tipe:p.tipe,
+        lot_qty:p.lotQty, harga_beli:p.hargaBeli, modal:p.modal, catatan:p.catatan||''
+      }).select('id').single();
+      res = {success:!error, id:data?.id};
+    }
+    else if(action==='editInvestasi'){
+      const row = STATE.investasi[p.rowIndex];
+      if(!row) return {success:false};
+      const {error} = await sb.from('investasi').update({
+        tanggal:tglToISO(p.tanggal), kode:p.kode, tipe:p.tipe,
+        lot_qty:p.lotQty, harga_beli:p.hargaBeli, modal:p.modal, catatan:p.catatan||''
+      }).eq('id',row.id);
+      res = {success:!error};
+    }
+    else if(action==='deleteInvestasi'){
+      const row = STATE.investasi[p.rowIndex];
+      if(!row) return {success:false};
+      const {error} = await sb.from('investasi').delete().eq('id',row.id);
+      res = {success:!error};
+    }
+    else if(action==='saveAset'){
+      const {error} = await sb.from('aset').upsert({
+        nama:p.nama, kategori:p.kategori||'', modal:p.modal||0,
+        nilai_saat_ini:p.nilaiSaatIni||p.nilai_saat_ini||0,
+        tanggal_update:p.tanggalUpdate||today(), catatan:p.catatan||''
+      },{onConflict:'user_id,nama'});
+      res = {success:!error};
+    }
+    else if(action==='deleteAset'){
+      const {error} = await sb.from('aset').delete().eq('nama',p.nama);
+      res = {success:!error};
+    }
+    else if(action==='addLiability'){
+      const id = p.id||'lib'+Date.now();
+      const {error} = await sb.from('liabilities').insert({
+        id, nama:p.nama, total_pinjaman:p.totalPinjaman||0,
+        sisa_pokok:p.sisaPokok||0, cicilan_bulan:p.cicilanBulan||0,
+        kreditur:p.kreditur||'', catatan:p.catatan||'',
+        tanggal_update:today()
+      });
+      res = {success:!error, id};
+    }
+    else if(action==='updateLiability'){
+      const {error} = await sb.from('liabilities').update({
+        nama:p.nama, total_pinjaman:p.totalPinjaman||0,
+        sisa_pokok:p.sisaPokok||0, cicilan_bulan:p.cicilanBulan||0,
+        kreditur:p.kreditur||'', catatan:p.catatan||'',
+        tanggal_update:today()
+      }).eq('id',p.id);
+      res = {success:!error};
+    }
+    else if(action==='deleteLiability'){
+      const {error} = await sb.from('liabilities').delete().eq('id',p.id);
+      res = {success:!error};
+    }
+    else if(action==='addRencana'){
+      const id = p.id||'ren'+Date.now();
+      const {error} = await sb.from('rencana').insert({
+        id, bulan:p.bulan, tahun:p.tahun, tipe:p.tipe,
+        deskripsi:p.deskripsi||'', kategori:p.kategori||'',
+        nominal:p.nominal||0, akun:p.akun||'',
+        liability_id:p.liabilityId||null, status:p.status||'pending', tx_id:null
+      });
+      res = {success:!error, id};
+    }
+    else if(action==='updateRencana'){
+      const upd = {};
+      if(p.status!==undefined) upd.status = p.status;
+      if(p.txId!==undefined)   upd.tx_id = p.txId;
+      if(p.bulan!==undefined)  upd.bulan = p.bulan;
+      if(p.tahun!==undefined)  upd.tahun = p.tahun;
+      if(p.tipe!==undefined)   upd.tipe  = p.tipe;
+      if(p.deskripsi!==undefined) upd.deskripsi = p.deskripsi;
+      if(p.kategori!==undefined)  upd.kategori  = p.kategori;
+      if(p.nominal!==undefined)   upd.nominal   = p.nominal;
+      if(p.akun!==undefined)      upd.akun      = p.akun;
+      const {error} = await sb.from('rencana').update(upd).eq('id',p.id);
+      res = {success:!error};
+    }
+    else if(action==='deleteRencana'){
+      const {error} = await sb.from('rencana').delete().eq('id',p.id);
+      res = {success:!error};
+    }
+    else if(action==='addSubscription'){
+      const id = p.id||'sub'+Date.now();
+      const {error} = await sb.from('subscriptions').insert({
+        id, nama:p.nama, nominal:p.nominal||0,
+        billing_date:p.billingDate||1, kategori:p.kategori||'',
+        keterangan:p.keterangan||'', aktif:p.aktif!==false
+      });
+      res = {success:!error, id};
+    }
+    else if(action==='updateSubscription'){
+      const {error} = await sb.from('subscriptions').update({
+        nama:p.nama, nominal:p.nominal||0,
+        billing_date:p.billingDate||1, kategori:p.kategori||'',
+        keterangan:p.keterangan||'', aktif:p.aktif!==false
+      }).eq('id',p.id);
+      res = {success:!error};
+    }
+    else if(action==='deleteSubscription'){
+      const {error} = await sb.from('subscriptions').delete().eq('id',p.id);
+      res = {success:!error};
+    }
+    else if(action==='updateCommitment'){
+      const {error} = await sb.from('commitments').update({status:p.status}).eq('id',p.id);
+      res = {success:!error};
+    }
+    else if(action==='deleteCommitment'){
+      const {error} = await sb.from('commitments').delete().eq('id',p.id);
+      res = {success:!error};
+    }
+    else if(action==='saveGoal'){
+      const {error} = await sb.from('goals').upsert({
+        tipe:p.tipe, no:p.no, goal:p.goal, info:p.info||'',
+        kategori:p.kategori||'', deadline:p.deadline||'', done:p.done||false
+      },{onConflict:'user_id,tipe,no'});
+      res = {success:!error};
+    }
+    else if(action==='toggleGoal'){
+      const {error} = await sb.from('goals').update({done:p.done})
+        .eq('tipe',p.tipe).eq('no',p.no);
+      res = {success:!error};
+    }
+    else if(action==='saveSnapshot'){
+      const {error} = await sb.from('snapshots').upsert({
+        date:p.date, net_worth:p.netWorth||0,
+        total_aset:p.totalAset||0, total_inv:p.totalInv||0,
+        port_val:p.portVal||0, dca_val:p.dcaVal||0,
+        aset_val:p.asetVal||0, bisnis_val:p.bisnisVal||0,
+        cash_val:p.cashVal||0, total_hutang:p.totalHutang||0
+      },{onConflict:'user_id,date'});
+      res = {success:!error};
+    }
+    else if(action==='setConfig'){
+      const {error} = await sb.from('config').upsert(
+        {key:p.key, value:p.value},
+        {onConflict:'user_id,key'}
+      );
+      res = {success:!error};
+    }
+    else if(action==='checkAuth'){
+      res = {ok:true};
+    }
+    if(!res.success) console.warn('[sb] action failed:',action);
+    return res;
   }catch(e){
-    console.error('[sheet] Error:',e.message);
+    console.error('[sb] Error:',action,e.message);
     return {success:false,error:e.message};
   }
 }
 
 async function loadSheet(){
   try{
-    const r = await fetch(`${WEB_URL}?action=load`,{signal:AbortSignal.timeout(20000)});
-    const d = await r.json();
-    if(d.error){ console.error('[load]',d.error); return; }
+    const [txRes,budgetRes,dcaRes,invRes,asetRes,commitRes,liabRes,renRes,subRes,goalRes,cfgRes,hargaRes,snapRes] = await Promise.all([
+      sb.from('transactions').select('*').order('tanggal',{ascending:false}),
+      sb.from('budget').select('*'),
+      sb.from('btc_dca').select('*').order('tanggal'),
+      sb.from('investasi').select('*').order('tanggal'),
+      sb.from('aset').select('*'),
+      sb.from('commitments').select('*'),
+      sb.from('liabilities').select('*'),
+      sb.from('rencana').select('*'),
+      sb.from('subscriptions').select('*'),
+      sb.from('goals').select('*').order('tipe').order('no'),
+      sb.from('config').select('*'),
+      sb.from('harga_cache').select('*'),
+      sb.from('snapshots').select('*').order('date')
+    ]);
 
-    if(d.transactions?.length) STATE.transactions = d.transactions.map(t=>({...t,tanggal:fmtTgl(t.tanggal)}));
-    if(d.budget?.length)       STATE.budget = d.budget;
-    if(d.btcDca?.length)       STATE.btcDca = d.btcDca.map(t=>({...t,tanggal:fmtTgl(t.tanggal)}));
-    else                       STATE.btcDca = [...BASE_DCA.map((t,i)=>({...t,id:'b'+i,_base:true}))];
-    if(d.investasi?.length)    STATE.investasi = d.investasi.map(t=>({...t,tanggal:fmtTgl(t.tanggal)}));
-    if(d.aset?.length)         STATE.aset = d.aset;
-    if(d.commitments?.length)  STATE.commitments = d.commitments;
-    if(d.liabilities?.length)  STATE.liabilities = d.liabilities;
-    if(d.rencana?.length) STATE.rencana = d.rencana;
-    if(d.subscriptions?.length) STATE.subscriptions = d.subscriptions;
-    if(d.perkasa)              STATE.perkasa = d.perkasa;
-    if(d.goals?.length)        STATE.goals = d.goals;
-    if(d.config)               STATE.config = d.config;
-    if(d.hargaCache){
-      STATE.hargaCache = d.hargaCache;
-      Object.entries(d.hargaCache).forEach(([k,v])=>{ if(v>0&&k!=='BTC') STATE.sahamLive[k]=v; });
+    if(txRes.data?.length)
+      STATE.transactions = txRes.data.map(t=>({...t,tanggal:fmtTgl(t.tanggal),periodeBulan:t.periode_bulan,periodeTahun:t.periode_tahun}));
+
+    if(budgetRes.data?.length)
+      STATE.budget = budgetRes.data.map(b=>({...b,tipe:b.tipe_kategori,alokasi:Number(b.alokasi)}));
+
+    if(dcaRes.data?.length)
+      STATE.btcDca = dcaRes.data.map(t=>({...t,tanggal:fmtTgl(t.tanggal),beli:Number(t.beli),harga:Number(t.harga)}));
+    else
+      STATE.btcDca = [...BASE_DCA.map((t,i)=>({...t,id:'b'+i,_base:true}))];
+
+    if(invRes.data?.length)
+      STATE.investasi = invRes.data.map(t=>({
+        ...t, tanggal:fmtTgl(t.tanggal),
+        lotQty:Number(t.lot_qty), hargaBeli:Number(t.harga_beli),
+        modal:Number(t.modal)
+      }));
+
+    if(asetRes.data?.length)
+      STATE.aset = asetRes.data.map(a=>({
+        ...a, modal:Number(a.modal),
+        nilaiSaatIni:Number(a.nilai_saat_ini),
+        tanggalUpdate:a.tanggal_update
+      }));
+
+    if(commitRes.data?.length)  STATE.commitments  = commitRes.data;
+    if(liabRes.data?.length)    STATE.liabilities   = liabRes.data.map(l=>({...l,totalPinjaman:Number(l.total_pinjaman),sisaPokok:Number(l.sisa_pokok),cicilanBulan:Number(l.cicilan_bulan)}));
+    if(renRes.data?.length)     STATE.rencana       = renRes.data.map(r=>({...r,liabilityId:r.liability_id,txId:r.tx_id}));
+    if(subRes.data?.length)     STATE.subscriptions = subRes.data.map(s=>({...s,billingDate:s.billing_date}));
+    if(goalRes.data?.length)    STATE.goals         = goalRes.data;
+
+    if(cfgRes.data?.length){
+      const cfg = {};
+      cfgRes.data.forEach(r=>{ cfg[r.key]=r.value; });
+      STATE.config = cfg;
     }
-    if(d.snapshots?.length){
+
+    if(hargaRes.data?.length){
+      const hc = {};
+      hargaRes.data.forEach(r=>{ hc[r.kode]=Number(r.harga); });
+      STATE.hargaCache = hc;
+      Object.entries(hc).forEach(([k,v])=>{ if(v>0&&k!=='BTC') STATE.sahamLive[k]=v; });
+    }
+
+    if(snapRes.data?.length){
+      const snaps = snapRes.data.map(s=>({
+        date:s.date, netWorth:Number(s.net_worth),
+        totalAset:Number(s.total_aset), totalInv:Number(s.total_inv),
+        portVal:Number(s.port_val), dcaVal:Number(s.dca_val),
+        asetVal:Number(s.aset_val), bisnisVal:Number(s.bisnis_val),
+        cashVal:Number(s.cash_val), totalHutang:Number(s.total_hutang)
+      }));
       const merged={};
       lsgj(K.SNAP,[]).forEach(s=>merged[s.date]=s);
-      d.snapshots.forEach(s=>merged[s.date]=s);
+      snaps.forEach(s=>merged[s.date]=s);
       STATE.snapshots = Object.values(merged).sort((a,b)=>a.date.localeCompare(b.date)).slice(-365);
       lssj(K.SNAP,STATE.snapshots);
     }
-    if(!STATE.btcDca.length) STATE.btcDca = [...BASE_DCA.map((t,i)=>({...t,id:'b'+i,_base:true}))];
+
+    if(!STATE.btcDca.length)
+      STATE.btcDca = [...BASE_DCA.map((t,i)=>({...t,id:'b'+i,_base:true}))];
+
   }catch(e){ console.error('[load] Error:',e.message); }
 }
 
@@ -664,7 +941,15 @@ async function fetchSahamPrices(){
   try{
     const r = await fetch(`${WEB_URL}?action=sahamPrices&kodes=${kodes.join(',')}`,{signal:AbortSignal.timeout(25000)});
     const d = await r.json();
-    if(d.prices) Object.entries(d.prices).forEach(([k,v])=>{ if(v>0) STATE.sahamLive[k]=v; });
+    if(d.prices){
+      Object.entries(d.prices).forEach(([k,v])=>{ if(v>0) STATE.sahamLive[k]=v; });
+      // Cache harga ke Supabase
+      const uid = (await sb.auth.getUser()).data?.user?.id;
+      if(uid){
+        const rows = Object.entries(d.prices).filter(([,v])=>v>0).map(([kode,harga])=>({kode,harga,updated:today()}));
+        if(rows.length) sb.from('harga_cache').upsert(rows,{onConflict:'user_id,kode'}).then(()=>{});
+      }
+    }
   }catch(e){}
 }
 
@@ -3103,21 +3388,23 @@ async function deleteFinGoal(id){
 function pageSettings(){
   return `
   <div class="card" style="margin-bottom:14px">
-    <div class="card-title">🔗 Koneksi Google Sheets</div>
-    <div style="font-size:12px;color:var(--t2);margin-bottom:8px">Web App URL Apps Script (sudah terpasang):</div>
-    <div style="background:var(--bg2);border:1px solid var(--border2);border-radius:var(--r);padding:10px 14px;font-family:var(--mono);font-size:11px;color:var(--teal);word-break:break-all">${WEB_URL}</div>
+    <div class="card-title">☁️ Koneksi Supabase</div>
+    <div style="font-size:12px;color:var(--t2);margin-bottom:8px">Database & Auth:</div>
+    <div style="background:var(--bg2);border:1px solid var(--border2);border-radius:var(--r);padding:10px 14px;font-family:var(--mono);font-size:11px;color:var(--teal);word-break:break-all">${SB_URL}</div>
     <div style="background:var(--green-bg);border:1px solid var(--green-bd);color:var(--green);border-radius:var(--r);padding:8px 14px;font-size:12px;margin-top:8px;display:flex;align-items:center;gap:6px">
-      <i class="ti ti-circle-check"></i> URL hardcoded — semua device otomatis tersambung
+      <i class="ti ti-circle-check"></i> Terhubung ke Supabase — data sync otomatis di semua device
     </div>
-    <button class="btn btn-sm btn-teal" style="margin-top:10px" onclick="testConnection()"><i class="ti ti-plug"></i> Test Koneksi</button>
+    <div style="margin-top:8px;font-size:12px;color:var(--t2)">Login sebagai: <strong style="color:var(--gold)">${STATE._user?.email||'-'}</strong></div>
+    <button class="btn btn-sm btn-teal" style="margin-top:10px" onclick="testSupabaseConnection()"><i class="ti ti-plug"></i> Test Koneksi</button>
     <div id="conn-toast" class="toast" style="margin-top:8px"></div>
   </div>
 
   <div class="card" style="margin-bottom:14px">
     <div class="card-title">🔑 Ganti Password</div>
+    <div style="font-size:12px;color:var(--t3);margin-bottom:8px">Ganti password akun Supabase kamu</div>
     <div class="fgrid fgrid-3" style="margin-bottom:8px">
-      <div class="fg"><label>Password Lama</label><input type="password" id="cp-old" placeholder="••••••••"/></div>
-      <div class="fg"><label>Password Baru</label><input type="password" id="cp-new" placeholder="••••••••"/></div>
+      <div class="fg"><label>Password Baru</label><input type="password" id="cp-new" placeholder="Min. 6 karakter"/></div>
+      <div class="fg"><label>Konfirmasi</label><input type="password" id="cp-new2" placeholder="Ulangi password baru"/></div>
       <div class="fg"><label>&nbsp;</label><button class="btn btn-gold btn-full" onclick="changePass()"><i class="ti ti-key"></i> Ganti</button></div>
     </div>
     <div id="cp-toast" class="toast"></div>
@@ -3147,14 +3434,14 @@ function pageSettings(){
   </div>
 
   <div class="card" style="margin-bottom:14px">
-    <div class="card-title">📋 Setup Apps Script</div>
+    <div class="card-title">👥 Multi-User</div>
     <div style="font-size:12px;color:var(--t2);line-height:2">
-      1. Buat Google Spreadsheet baru → copy Sheet ID<br/>
-      2. Paste <code style="background:var(--bg3);padding:1px 5px;border-radius:4px;font-family:var(--mono)">Code.gs</code> → ganti SHEET_ID → Save<br/>
-      3. Run <strong>initSheets()</strong> → Run <strong>testKoneksi()</strong> → authorize<br/>
-      4. Run <strong>setupTrigger()</strong> → cron harian jam 18:00 WIB<br/>
-      5. Deploy → New deployment → Web app → Anyone → copy URL<br/>
-      6. Tempel URL ke file index.html baris WEB_URL → push ke GitHub
+      Dashboard ini mendukung beberapa akun sekaligus.<br/>
+      Setiap user hanya melihat data miliknya sendiri.<br/>
+      Untuk menambah user baru (pasangan, dll):<br/>
+      1. Buka <a href="https://supabase.com/dashboard/project/pefkfuoowzfnbkmygzxo/auth/users" target="_blank" style="color:var(--teal)">Supabase → Authentication → Users</a><br/>
+      2. Klik <strong>Add user</strong> → masukkan email + password<br/>
+      3. User tersebut bisa langsung login di dashboard ini
     </div>
   </div>
 
@@ -3835,12 +4122,15 @@ async function deleteGoalItem(tipe,no){
 //  ACTIONS — SETTINGS
 // ════════════════════════════════════════════════════════════
 async function testConnection(){
+  testSupabaseConnection();
+}
+
+async function testSupabaseConnection(){
   showToast('conn-toast','Testing...','warn',60000);
   try{
-    const r = await fetch(`${WEB_URL}?action=load`,{signal:AbortSignal.timeout(10000)});
-    const d = await r.json();
-    if(d.error) throw new Error(d.error);
-    showToast('conn-toast','✓ Terhubung! Sheet berhasil diakses.','ok');
+    const {data,error} = await sb.from('config').select('count').limit(1);
+    if(error) throw new Error(error.message);
+    showToast('conn-toast','✓ Terhubung ke Supabase!','ok');
   }catch(e){ showToast('conn-toast','❌ Gagal: '+e.message,'err'); }
 }
 
@@ -4041,14 +4331,13 @@ async function persistAccounts(accounts){
 }
 
 async function changePass(){
-  const oldP=document.getElementById('cp-old')?.value;
   const newP=document.getElementById('cp-new')?.value;
-  if(!oldP||!newP){ showToast('cp-toast','Isi password lama dan baru.','err'); return; }
-  const stored=lsg(K.PASS)||'fintrack2024';
-  if(oldP!==stored){ showToast('cp-toast','Password lama salah.','err'); return; }
-  lss(K.PASS,newP);
-  const ok=await callSheet({action:'setConfig',key:'password',value:newP});
-  showToast('cp-toast',ok.success?'✓ Password diubah!':'✓ Diubah lokal',ok.success?'ok':'warn');
+  const newP2=document.getElementById('cp-new2')?.value;
+  if(!newP||newP.length<6){ showToast('cp-toast','Password minimal 6 karakter.','err'); return; }
+  if(newP!==newP2){ showToast('cp-toast','Konfirmasi password tidak cocok.','err'); return; }
+  const {error} = await sb.auth.updateUser({password:newP});
+  if(error){ showToast('cp-toast','Gagal: '+error.message,'err'); return; }
+  showToast('cp-toast','✓ Password berhasil diubah!','ok');
   document.getElementById('cp-old').value='';
   document.getElementById('cp-new').value='';
 }
@@ -4304,63 +4593,73 @@ async function refreshAll(){
 }
 
 // ════════════════════════════════════════════════════════════
-//  LOGIN / LOGOUT
+//  LOGIN / LOGOUT — Supabase Auth
 // ════════════════════════════════════════════════════════════
 async function doLogin(){
-  const pass = document.getElementById('l-pass').value;
-  if(!pass){ showLoginErr('Masukkan password.'); return; }
-  document.getElementById('l-btn').textContent='Checking...';
-  const stored = lsg(K.PASS)||'fintrack2024';
-  if(pass===stored){ loginOk(); return; }
-  try{
-    const r=await fetch(`${WEB_URL}?action=checkAuth&pass=${encodeURIComponent(pass)}`,{signal:AbortSignal.timeout(8000)});
-    const d=await r.json();
-    if(d.ok){ lss(K.PASS,pass); loginOk(); return; }
-  }catch(e){}
-  showLoginErr('Password salah.');
-  document.getElementById('l-btn').textContent='Masuk ›';
+  const email = document.getElementById('l-email').value.trim();
+  const pass  = document.getElementById('l-pass').value;
+  if(!email||!pass){ showLoginErr('Masukkan email dan password.'); return; }
+  const btn = document.getElementById('l-btn');
+  btn.textContent='Masuk...'; btn.disabled=true;
+  const {data,error} = await sb.auth.signInWithPassword({email,password:pass});
+  btn.disabled=false;
+  if(error){ showLoginErr(error.message==='Invalid login credentials'?'Email atau password salah.':error.message); btn.innerHTML='Masuk <i class="ti ti-arrow-right" style="font-size:14px"></i>'; return; }
+  loginOk(data.user);
 }
 
 function showLoginErr(msg){
   const el=document.getElementById('l-err');
   el.textContent=msg; el.style.display='block';
-  document.getElementById('l-btn').textContent='Masuk ›';
+  document.getElementById('l-btn').innerHTML='Masuk <i class="ti ti-arrow-right" style="font-size:14px"></i>';
 }
 
-function loginOk(){
-  lssj(K.SESS,{ts:Date.now()});
+function loginOk(user){
+  STATE._user = user;
   document.getElementById('login-screen').style.display='none';
   document.getElementById('app').style.display='block';
+  // Update user info di sidebar
+  const uname = document.getElementById('u-name');
+  const urole = document.getElementById('u-role');
+  const uavatar = document.getElementById('u-avatar');
+  const name = user?.email?.split('@')[0]||'User';
+  if(uname) uname.textContent = name;
+  if(urole) urole.textContent = 'Tap untuk logout';
+  if(uavatar) uavatar.textContent = name[0].toUpperCase();
   STATE.snapshots = lsgj(K.SNAP,[]);
   STATE.btcDca = [...BASE_DCA.map((t,i)=>({...t,id:'b'+i,_base:true}))];
   renderPage('overview');
   refreshAll();
 }
 
-function doLogout(){
-  localStorage.removeItem(K.SESS);
+async function doLogout(){
+  await sb.auth.signOut();
+  STATE._user = null;
   document.getElementById('app').style.display='none';
   document.getElementById('login-screen').style.display='flex';
+  document.getElementById('l-email').value='';
   document.getElementById('l-pass').value='';
   document.getElementById('l-err').style.display='none';
-  document.getElementById('l-btn').textContent='Masuk ›';
+  document.getElementById('l-btn').innerHTML='Masuk <i class="ti ti-arrow-right" style="font-size:14px"></i>';
 }
 
 // ════════════════════════════════════════════════════════════
 //  BOOT
 // ════════════════════════════════════════════════════════════
+document.getElementById('l-email').addEventListener('keydown',e=>{ if(e.key==='Enter') document.getElementById('l-pass').focus(); });
 document.getElementById('l-pass').addEventListener('keydown',e=>{ if(e.key==='Enter') doLogin(); });
 
-(function(){
-  const sess = lsgj(K.SESS,null);
-  if(sess?.ts&&(Date.now()-sess.ts)<7*24*60*60*1000){
-    document.getElementById('login-screen').style.display='none';
-    document.getElementById('app').style.display='block';
-    STATE.snapshots = lsgj(K.SNAP,[]);
-    STATE.btcDca = [...BASE_DCA.map((t,i)=>({...t,id:'b'+i,_base:true}))];
-    renderPage('overview');
-    refreshAll();
+(async function(){
+  const {data:{session}} = await sb.auth.getSession();
+  if(session?.user){
+    loginOk(session.user);
   }
+  // Listen for auth changes (token refresh, signout from other tab)
+  sb.auth.onAuthStateChange((event, session)=>{
+    if(event==='SIGNED_OUT'){
+      document.getElementById('app').style.display='none';
+      document.getElementById('login-screen').style.display='flex';
+    }
+  });
 })();
 </script>
 </body>
