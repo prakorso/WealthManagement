@@ -684,6 +684,14 @@ function calcDCA(){
 function isSellTx(inv){ return String(inv.catatan||'').startsWith('JUAL|'); }
 function parseSellFee(inv){ const m=String(inv.catatan||'').match(/fee:(\d+)/); return m?parseInt(m[1]):0; }
 
+// T+2 settlement: tambah 2 hari bursa ke tanggal beli
+function addBursDays(dateISO, days){
+  const d=new Date(dateISO+'T00:00:00');
+  let added=0;
+  while(added<days){ d.setDate(d.getDate()+1); if(d.getDay()!==0&&d.getDay()!==6) added++; }
+  return d.toISOString().slice(0,10);
+}
+
 function calcPortfolio(){
   const byKode={};
   STATE.investasi.forEach(inv=>{
@@ -693,14 +701,31 @@ function calcPortfolio(){
   });
   return Object.values(byKode).map(p=>{
     const mul=p.tipe==='Saham'?100:1;
+    const isSaham=p.tipe==='Saham';
     const sorted=[...p.txs].sort((a,b)=>tglToISO(a.tanggal).localeCompare(tglToISO(b.tanggal)));
     let totalCost=0,totalQty=0,realizedPnl=0;
+    let pendingBuys=[]; // untuk saham: antre settlement T+2
     sorted.forEach(tx=>{
       const qty=(tx.lotQty||0)*mul;
+      const txISO=tglToISO(tx.tanggal);
       if(!isSellTx(tx)){
-        totalCost+=tx.modal||(qty*(tx.hargaBeli||0));
-        totalQty+=qty;
+        if(isSaham){
+          // Saham: tahan di pending, settle setelah T+2
+          pendingBuys.push({qty,cost:tx.modal||(qty*(tx.hargaBeli||0)),settle:addBursDays(txISO,2)});
+        } else {
+          totalCost+=tx.modal||(qty*(tx.hargaBeli||0));
+          totalQty+=qty;
+        }
       }else{
+        if(isSaham){
+          // Flush pending buys yang sudah settle (settleDt <= tanggal jual)
+          const still=[];
+          pendingBuys.forEach(pb=>{
+            if(pb.settle<=txISO){ totalQty+=pb.qty; totalCost+=pb.cost; }
+            else still.push(pb);
+          });
+          pendingBuys=still;
+        }
         const fee=parseSellFee(tx);
         const avgC=totalQty>0?totalCost/totalQty:0;
         const qs=Math.min(qty,totalQty);
@@ -708,8 +733,11 @@ function calcPortfolio(){
         realizedPnl+=proc-avgC*qs-fee;
         totalQty=Math.max(0,totalQty-qs);
         totalCost=totalQty*avgC;
+        // Jika posisi bersih jadi 0, reset — pending buys berikutnya mulai sesi baru
       }
     });
+    // Tambahkan pending buys yang belum di-flush (belum ada sell setelah mereka)
+    if(isSaham) pendingBuys.forEach(pb=>{ totalQty+=pb.qty; totalCost+=pb.cost; });
     const modal=totalCost; const lotQty=totalQty/mul;
     let live=null;
     if(p.tipe==='Saham') live=STATE.sahamLive[p.kode]||null;
