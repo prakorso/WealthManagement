@@ -2204,7 +2204,7 @@ function pageSaham(){
   const sahamList = STATE.investasi
     .map((inv,gi)=>({...inv,_gi:gi}))
     .filter(x=>x.tipe==='Saham')
-    .sort((a,b)=>new Date(b.tanggal)-new Date(a.tanggal)); // terbaru di atas
+    .sort((a,b)=>tglToISO(b.tanggal).localeCompare(tglToISO(a.tanggal))); // terbaru di atas
   const allPort = calcPortfolio().filter(p=>p.tipe==='Saham');
   const positions = allPort.map(s=>{
     const lembar = s.totalQty;
