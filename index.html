@@ -774,6 +774,23 @@ function calcAssetAllocation(){
   return {segs, total};
 }
 
+// Helper: cari rekening tabungan utama (config rekening_tabungan, case-insensitive)
+function getRekeningTabungan(){
+  const cfg = STATE.config.rekening_tabungan||'';
+  if(!cfg) return null;
+  const accounts = getAllAccounts();
+  return accounts.find(a=>a.nama.toLowerCase()===cfg.toLowerCase())?.nama || cfg;
+}
+
+// Saldo akumulatif rekening tabungan utama
+function getSaldoTabungan(){
+  const rek = getRekeningTabungan();
+  if(!rek) return null;
+  const acc = getAllAccounts().find(a=>a.nama.toLowerCase()===rek.toLowerCase());
+  if(!acc) return null;
+  return getSaldoAkun(acc);
+}
+
 function calcCashflowByDate(bulan, tahun){
   // Filter by physical transaction date — for cashflow view
   const txs = STATE.transactions.filter(t => t.bulan===bulan && t.tahun===tahun);
@@ -1187,6 +1204,12 @@ function pageOverview(){
       <div class="stat-val ${availableCash>=0?'teal':'rose'}">${fRp(availableCash)}</div>
       <div class="stat-hint">${getAllAccounts().filter(a=>!a.disabled).length} rekening aktif</div>
     </div>
+    ${(()=>{ const sTab=getSaldoTabungan(); const rekTab=getRekeningTabungan();
+      return sTab!=null?`<div class="stat teal">
+      <div class="stat-lbl">Tabungan (${rekTab})</div>
+      <div class="stat-val teal">${fRp(sTab)}</div>
+      <div class="stat-hint">Saldo akumulatif tabungan</div>
+    </div>`:''; })()}
     <div class="stat ${savingRate>=30?'teal':''}">
       <div class="stat-lbl">Savings Rate</div>
       <div class="stat-val ${savingRate>=30?'teal':savingRate>=20?'':'rose'}">${savingRate}%</div>
@@ -1205,7 +1228,7 @@ function pageOverview(){
       ${[
         {label:'Income',cur:cf.income,prev:cfPrev.income,color:'var(--green)',delta:incDelta},
         {label:'Spending',cur:cf.spend,prev:cfPrev.spend,color:'var(--rose)',delta:spDelta,invert:true},
-        {label:'Savings',cur:cf.saving,prev:cfPrev.saving,color:'var(--teal)',delta:svDelta},
+        {label:'Savings',cur:getSaldoTabungan()??cf.saving,prev:cfPrev.saving,color:'var(--teal)',delta:getSaldoTabungan()!=null?null:svDelta,hint:getSaldoTabungan()!=null?'Saldo akumulatif '+(getRekeningTabungan()||''):'Bulan ini'},
       ].map(m=>{
         const dir = m.delta==null?null:(m.invert?-m.delta:m.delta);
         const chipCls = dir==null?'neu':dir>=0?'up':'dn';
@@ -1215,7 +1238,7 @@ function pageOverview(){
           <div style="font-size:10px;color:var(--t3);text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px">${m.label}</div>
           <div style="font-family:var(--mono);font-size:14px;font-weight:600;color:${m.color}">${fRp(m.cur)}</div>
           <div style="margin-top:6px"><span class="chip ${chipCls}" style="font-size:10px">${arrow} ${deltaStr} MoM</span></div>
-          <div style="font-size:10px;color:var(--t3);margin-top:4px">${prevBln}: ${fRp(m.prev)}</div>
+          <div style="font-size:10px;color:var(--t3);margin-top:4px">${m.hint||prevBln+': '+fRp(m.prev)}</div>
         </div>`;
       }).join('')}
     </div>
@@ -1346,7 +1369,7 @@ function pageCashflow(){
     <div class="stat teal"><div class="stat-lbl">Available Cash</div><div class="stat-val teal">${fRp(calcAvailableCash())}</div><div class="stat-hint">Total saldo rekening aktif</div></div>
     <div class="stat"><div class="stat-lbl">Income</div><div class="stat-val green">${fRp(cf.income)}</div><div class="stat-hint">Periode terpilih</div></div>
     <div class="stat"><div class="stat-lbl">Spending</div><div class="stat-val rose">${fRp(cf.spend)}</div><div class="stat-hint">Periode terpilih</div></div>
-    <div class="stat"><div class="stat-lbl">Transfer / Tabungan</div><div class="stat-val teal">${fRp(cf.saving)}</div><div class="stat-hint">Pindah aset (netral)</div></div>
+    <div class="stat"><div class="stat-lbl">Tabungan${getRekeningTabungan()?` (${getRekeningTabungan()})`:''}</div><div class="stat-val teal">${fRp(getSaldoTabungan()??cf.saving)}</div><div class="stat-hint">${getSaldoTabungan()!=null?'Saldo akumulatif':'Transfer & nabung bulan ini'}</div></div>
   </div>
 
   <div class="card">
@@ -3146,6 +3169,22 @@ function pageSettings(){
   </div>
 
   <div class="card" style="margin-bottom:14px">
+    <div class="card-title">💰 Rekening Tabungan Utama</div>
+    <div style="font-size:12px;color:var(--t3);margin-bottom:10px">Saldo rekening ini ditampilkan sebagai "Tabungan" di Overview & Cashflow. Pembelian BTC DCA dan Saham otomatis dipotong dari rekening ini.</div>
+    <div class="fgrid fgrid-3" style="margin-bottom:8px">
+      <div class="fg"><label>Rekening Tabungan</label>
+        <select id="cfg-rek-tab">
+          <option value="">— Tidak ada —</option>
+          ${getAllAccounts().map(a=>`<option value="${a.nama}"${(STATE.config.rekening_tabungan||'').toLowerCase()===a.nama.toLowerCase()?' selected':''}>${a.nama}</option>`).join('')}
+        </select>
+      </div>
+      <div class="fg"><label>&nbsp;</label><button class="btn btn-gold btn-full" onclick="saveConfig('rekening_tabungan',document.getElementById('cfg-rek-tab').value)">Simpan</button></div>
+    </div>
+    ${getRekeningTabungan()?`<div style="background:var(--teal-bg);border:1px solid var(--teal-bd);color:var(--teal);border-radius:var(--r);padding:8px 14px;font-size:12px;display:flex;align-items:center;gap:6px"><i class="ti ti-circle-check"></i> ${getRekeningTabungan()} — Saldo: <strong>${fRp(getSaldoTabungan())}</strong></div>`:''}
+    <div id="rek-tab-toast" class="toast" style="margin-top:8px"></div>
+  </div>
+
+  <div class="card" style="margin-bottom:14px">
     <div class="card-title">🎯 Target Net Worth</div>
     <div class="fgrid fgrid-2" style="margin-bottom:8px">
       <div class="fg"><label>Target (Rp)</label><input type="number" id="cfg-target" value="${STATE.config.target_nw||1000000000}" placeholder="1000000000"/></div>
@@ -3291,10 +3330,11 @@ function rerenderCashflow(){
   // Recalc scorecards by physical date
   const cf = calcCashflowByDate(bln,thn);
   const stats = document.querySelectorAll('#page-content .stat-grid .stat-val');
-  // Update Income, Spending, Transfer scorecard (index 1,2,3 — index 0 is Available Cash)
+  // Update Income, Spending, Tabungan scorecard (index 1,2,3 — index 0 is Available Cash)
   if(stats[1]) stats[1].textContent = fRp(cf.income);
   if(stats[2]) stats[2].textContent = fRp(cf.spend);
-  if(stats[3]) stats[3].textContent = fRp(cf.saving);
+  const saldoTab = getSaldoTabungan();
+  if(stats[3]) stats[3].textContent = fRp(saldoTab??cf.saving);
 }
 
 // ════════════════════════════════════════════════════════════
@@ -3387,7 +3427,9 @@ async function submitDca(){
   STATE.btcDca.push(tx);
   if(doCf){
     const d=new Date(tgl); const blnCf=BULAN_LIST[d.getMonth()]; const thnCf=String(d.getFullYear());
-    const cfTx={id:'tx_'+Date.now(),tanggal:fd,tipe:'pengeluaran',deskripsi:'BTC DCA '+beli/harga.toFixed(8)+' BTC',kategori:'Investasi',subkategori:'BTC DCA',nominal:beli,akun:STATE.config.akun_default||getRekening()[0]||'',bulan:blnCf,tahun:thnCf,catatan:'auto-inv'};
+    const akunCf = getRekeningTabungan()||STATE.config.akun_default||getRekening()[0]||'';
+    const tipeTab = getRekeningTabungan()?'tabungan':'pengeluaran';
+    const cfTx={id:'tx_'+Date.now(),tanggal:fd,tipe:tipeTab,deskripsi:'BTC DCA',kategori:'Investasi',subkategori:'BTC DCA',nominal:beli,akun:akunCf,bulan:blnCf,tahun:thnCf,catatan:'auto-inv'};
     STATE.transactions.push(cfTx);
     callSheet({action:'addTransaction',...cfTx}).catch(()=>{});
   }
@@ -3533,7 +3575,9 @@ async function submitSaham(){
   STATE.investasi.push(inv);
   if(doCf){
     const d=new Date(tgl); const blnCf=BULAN_LIST[d.getMonth()]; const thnCf=String(d.getFullYear());
-    const cfTx={id:'tx_'+Date.now(),tanggal:fd,tipe:'pengeluaran',deskripsi:'Beli Saham '+kode+' '+lot+' lot',kategori:'Investasi',subkategori:'Saham',nominal:modal,akun:STATE.config.akun_default||getRekening()[0]||'',bulan:blnCf,tahun:thnCf,catatan:'auto-inv'};
+    const akunCf = getRekeningTabungan()||STATE.config.akun_default||getRekening()[0]||'';
+    const tipeTab = getRekeningTabungan()?'tabungan':'pengeluaran';
+    const cfTx={id:'tx_'+Date.now(),tanggal:fd,tipe:tipeTab,deskripsi:'Beli Saham '+kode+' '+lot+' lot',kategori:'Investasi',subkategori:'Saham',nominal:modal,akun:akunCf,bulan:blnCf,tahun:thnCf,catatan:'auto-inv'};
     STATE.transactions.push(cfTx);
     callSheet({action:'addTransaction',...cfTx}).catch(()=>{});
   }
