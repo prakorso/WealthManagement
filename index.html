@@ -2172,7 +2172,11 @@ function pageCrypto(){
 
 // ─── SAHAM ────────────────────────────────────────────────────
 function pageSaham(){
-  const sahamList = STATE.investasi.filter(i=>i.tipe==='Saham');
+  // Sertakan global index (_gi) agar delete/edit pakai index STATE.investasi yang benar
+  const sahamList = STATE.investasi
+    .map((inv,gi)=>({...inv,_gi:gi}))
+    .filter(x=>x.tipe==='Saham')
+    .sort((a,b)=>new Date(b.tanggal)-new Date(a.tanggal)); // terbaru di atas
   const allPort = calcPortfolio().filter(p=>p.tipe==='Saham');
   const positions = allPort.map(s=>{
     const lembar = s.totalQty;
@@ -2268,8 +2272,8 @@ function pageSaham(){
             <td style="text-align:right;font-family:var(--mono)">${fRp(s.hargaBeli)}</td>
             <td style="text-align:right;font-family:var(--mono)">${fRp(s.modal)}</td>
             <td><div class="td-act">
-              ${!isSell?`<button class="btn btn-ghost btn-xs" onclick="editSahamTx(STATE.investasi.filter(x=>x.tipe==='Saham')[${i}],${i})"><i class="ti ti-edit"></i></button>`:''}
-              <button class="btn btn-ghost btn-xs" style="color:var(--rose)" onclick="deleteSahamTx(${i})"><i class="ti ti-trash"></i></button>
+              ${!isSell?`<button class="btn btn-ghost btn-xs" onclick="editSahamTx(STATE.investasi[${s._gi}],${s._gi})"><i class="ti ti-edit"></i></button>`:''}
+              <button class="btn btn-ghost btn-xs" style="color:var(--rose)" onclick="deleteSahamTx(${s._gi})"><i class="ti ti-trash"></i></button>
             </div></td>
           </tr>`;}).join('')}
         </tbody>
