@@ -782,13 +782,25 @@ function getRekeningTabungan(){
   return accounts.find(a=>a.nama.toLowerCase()===cfg.toLowerCase())?.nama || cfg;
 }
 
-// Saldo akumulatif rekening tabungan utama
+// Saldo tabungan: pakai config tabungan_saldo jika ada, fallback saldoManual akun
 function getSaldoTabungan(){
   const rek = getRekeningTabungan();
   if(!rek) return null;
+  const stored = STATE.config.tabungan_saldo;
+  if(stored!=null && stored!=='') return Number(stored);
+  // Fallback: saldoManual dari akun jika di-set manual
   const acc = getAllAccounts().find(a=>a.nama.toLowerCase()===rek.toLowerCase());
-  if(!acc) return null;
-  return getSaldoAkun(acc);
+  if(acc && acc.saldoManual!=null && acc.saldoManual!=='') return Number(acc.saldoManual);
+  return null;
+}
+
+// Update saldo tabungan (dipanggil saat beli BTC/Saham)
+async function deductSaldoTabungan(nominal, label){
+  const cur = getSaldoTabungan();
+  if(cur==null) return;
+  const newVal = cur - nominal;
+  STATE.config.tabungan_saldo = String(newVal);
+  callSheet({action:'setConfig', key:'tabungan_saldo', value:String(newVal)}).catch(()=>{});
 }
 
 function calcCashflowByDate(bulan, tahun){
@@ -3180,7 +3192,16 @@ function pageSettings(){
       </div>
       <div class="fg"><label>&nbsp;</label><button class="btn btn-gold btn-full" onclick="saveConfig('rekening_tabungan',document.getElementById('cfg-rek-tab').value)">Simpan</button></div>
     </div>
-    ${getRekeningTabungan()?`<div style="background:var(--teal-bg);border:1px solid var(--teal-bd);color:var(--teal);border-radius:var(--r);padding:8px 14px;font-size:12px;display:flex;align-items:center;gap:6px"><i class="ti ti-circle-check"></i> ${getRekeningTabungan()} — Saldo: <strong>${fRp(getSaldoTabungan())}</strong></div>`:''}
+    ${getRekeningTabungan()?`
+    <div style="margin-top:12px;padding-top:12px;border-top:1px solid var(--border)">
+      <div style="font-size:11px;font-weight:600;color:var(--t3);text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px">Saldo Tabungan Saat Ini</div>
+      <div class="fgrid fgrid-3">
+        <div class="fg"><label>Saldo (Rp)</label><input type="number" id="cfg-tab-saldo" value="${getSaldoTabungan()??''}" placeholder="55000000"/></div>
+        <div class="fg"><label>&nbsp;</label><button class="btn btn-gold btn-full" onclick="setSaldoTabungan()">Set Saldo</button></div>
+      </div>
+      <div style="font-size:10px;color:var(--t3);margin-top:4px">Set sekali sekarang sesuai saldo ${getRekeningTabungan()} kamu. Otomatis berkurang setiap ada pembelian BTC/Saham.</div>
+      <div style="background:var(--teal-bg);border:1px solid var(--teal-bd);color:var(--teal);border-radius:var(--r);padding:8px 14px;font-size:12px;margin-top:8px;display:flex;align-items:center;gap:6px"><i class="ti ti-piggy-bank"></i> Saldo sekarang: <strong style="margin-left:4px">${fRp(getSaldoTabungan())}</strong></div>
+    </div>`:''}
     <div id="rek-tab-toast" class="toast" style="margin-top:8px"></div>
   </div>
 
@@ -3432,6 +3453,7 @@ async function submitDca(){
     const cfTx={id:'tx_'+Date.now(),tanggal:fd,tipe:tipeTab,deskripsi:'BTC DCA',kategori:'Investasi',subkategori:'BTC DCA',nominal:beli,akun:akunCf,bulan:blnCf,tahun:thnCf,catatan:'auto-inv'};
     STATE.transactions.push(cfTx);
     callSheet({action:'addTransaction',...cfTx}).catch(()=>{});
+    deductSaldoTabungan(beli);
   }
   document.getElementById('dca-tgl').value = today();
   document.getElementById('dca-beli').value='';
@@ -3580,6 +3602,7 @@ async function submitSaham(){
     const cfTx={id:'tx_'+Date.now(),tanggal:fd,tipe:tipeTab,deskripsi:'Beli Saham '+kode+' '+lot+' lot',kategori:'Investasi',subkategori:'Saham',nominal:modal,akun:akunCf,bulan:blnCf,tahun:thnCf,catatan:'auto-inv'};
     STATE.transactions.push(cfTx);
     callSheet({action:'addTransaction',...cfTx}).catch(()=>{});
+    deductSaldoTabungan(modal);
   }
   renderPage('saham');
   const ok = await callSheet({action:'addInvestasi',tanggal:fd,kode,tipe:'Saham',lotQty:lot,hargaBeli:harga,modal,catatan:''});
@@ -4085,6 +4108,16 @@ async function deleteAccount(idx){
   if(!confirm('Hapus rekening "'+accounts[idx].nama+'"?')) return;
   accounts.splice(idx,1);
   await persistAccounts(accounts);
+  renderPage('settings');
+}
+
+async function setSaldoTabungan(){
+  const val = document.getElementById('cfg-tab-saldo')?.value;
+  if(val===''||val==null){ showToast('rek-tab-toast','Masukkan nominal saldo.','err'); return; }
+  const num = Number(val);
+  STATE.config.tabungan_saldo = String(num);
+  const ok = await callSheet({action:'setConfig', key:'tabungan_saldo', value:String(num)});
+  showToast('rek-tab-toast', ok.success?`✓ Saldo tabungan diset ke ${fRp(num)}`:'⚠ Tersimpan lokal', ok.success?'ok':'warn');
   renderPage('settings');
 }
 
