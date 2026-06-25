@@ -3803,8 +3803,30 @@ async function saveEditSahamTx(id, idx){
   const fd    = fmtTgl(tgl);
   const modal = lot*100*harga;
   const cat   = akun ? 'akun:'+akun : '';
-  const updated = {id,tanggal:fd,kode,tipe:'Saham',lotQty:lot,hargaBeli:harga,modal,catatan:cat};
+
+  // Cek apakah rekening berubah → sesuaikan saldo tabungan
   const ei = id ? STATE.investasi.findIndex(i=>i.id===id) : -1;
+  const oldInv = ei>-1 ? STATE.investasi[ei] : (idx<STATE.investasi.length ? STATE.investasi[idx] : null);
+  const oldAkunMatch = String(oldInv?.catatan||'').match(/^akun:(.+)$/);
+  const oldAkun = oldAkunMatch ? oldAkunMatch[1] : '';
+  const rekTab = getRekeningTabungan();
+  if(rekTab){
+    const newIsTab = akun.toLowerCase()===rekTab.toLowerCase();
+    const oldIsTab = oldAkun.toLowerCase()===rekTab.toLowerCase();
+    if(newIsTab && !oldIsTab){
+      // Rekening baru = tabungan, lama bukan → deduct
+      deductSaldoTabungan(modal);
+    } else if(!newIsTab && oldIsTab){
+      // Rekening lama = tabungan, baru bukan → kembalikan
+      const cur = getSaldoTabungan();
+      if(cur!=null){
+        STATE.config.tabungan_saldo = String(cur + modal);
+        callSheet({action:'setConfig', key:'tabungan_saldo', value:String(cur + modal)}).catch(()=>{});
+      }
+    }
+  }
+
+  const updated = {id,tanggal:fd,kode,tipe:'Saham',lotQty:lot,hargaBeli:harga,modal,catatan:cat};
   if(ei>-1) STATE.investasi[ei]=updated; else if(idx<STATE.investasi.length) STATE.investasi[idx]=updated;
   closeModal(); renderPage('saham');
   const ok = await callSheet({action:'editInvestasi',rowIndex:idx,tanggal:fd,kode,tipe:'Saham',lotQty:lot,hargaBeli:harga,modal,catatan:cat});
@@ -3975,6 +3997,12 @@ function calcSaldoOtomatis(namaAkun){
 function getSaldoAkun(acc){
   // Kalau ada saldoManual (bukan null/undefined), pakai itu. Else hitung otomatis.
   if(acc.saldoManual!=null && acc.saldoManual!=='') return Number(acc.saldoManual);
+  // Kalau ini rekening tabungan utama, pakai tabungan_saldo dari config (manual running balance)
+  const rekTab = STATE.config.rekening_tabungan||'';
+  if(rekTab && acc.nama.toLowerCase()===rekTab.toLowerCase()){
+    const stored = STATE.config.tabungan_saldo;
+    if(stored!=null && stored!=='') return Number(stored);
+  }
   return calcSaldoOtomatis(acc.nama);
 }
 
