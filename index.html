@@ -774,6 +774,15 @@ function calcAssetAllocation(){
   return {segs, total};
 }
 
+function calcCashflowByDate(bulan, tahun){
+  // Filter by physical transaction date — for cashflow view
+  const txs = STATE.transactions.filter(t => t.bulan===bulan && t.tahun===tahun);
+  const income = txs.filter(t=>t.tipe==='pemasukan').reduce((a,t)=>a+t.nominal,0);
+  const spend  = txs.filter(t=>t.tipe==='pengeluaran').reduce((a,t)=>a+t.nominal,0);
+  const saving = txs.filter(t=>t.tipe==='tabungan').reduce((a,t)=>a+t.nominal,0);
+  return {income,spend,saving,sisa:income-spend-saving,txs};
+}
+
 function calcCashflowMonth(bulan,tahun){
   // Financial Period: pakai periodeBulan/periodeTahun kalau ada, fallback ke bulan/tahun (transaction date)
   const txs = STATE.transactions.filter(t=>{
@@ -1301,9 +1310,9 @@ function pageOverview(){
 // ─── CASHFLOW ────────────────────────────────────────────────
 function pageCashflow(){
   const bln = nowMonth(); const thn = nowYear();
-  const cf  = calcCashflowMonth(bln,thn);
-  const allBln = [...new Set(STATE.transactions.map(t=>t.periodeBulan||t.bulan))];
-  const currTxs = STATE.transactions.filter(t=>(t.periodeBulan||t.bulan)===bln&&(t.periodeTahun||t.tahun)===thn).reverse();
+  const cf  = calcCashflowByDate(bln,thn);
+  const allBln = [...new Set(STATE.transactions.map(t=>t.bulan).filter(Boolean))];
+  const currTxs = STATE.transactions.filter(t=>t.bulan===bln&&t.tahun===thn).reverse();
 
   return `
   <div class="tx-form-card">
@@ -3273,17 +3282,19 @@ async function saveEditTx(id,bulan,tahun){
 function rerenderCashflow(){
   const bln = document.getElementById('filter-bln')?.value||nowMonth();
   const thn = nowYear();
-  // Filter by Financial Period (consistent with cashflow report)
-  const txs = STATE.transactions.filter(t=>(t.periodeBulan||t.bulan)===bln&&(t.periodeTahun||t.tahun)===thn).reverse();
+  // Filter by physical transaction date
+  const txs = STATE.transactions.filter(t=>t.bulan===bln&&t.tahun===thn).reverse();
   const tbody = document.getElementById('tx-tbody');
   if(tbody) tbody.innerHTML = renderTxRows(txs);
-  // Update title to match selected filter
   const title = document.getElementById('cf-hist-title');
   if(title) title.textContent = 'Riwayat Transaksi — '+bln+' '+thn;
-  // Recalc scorecards for selected period
-  const cf = calcCashflowMonth(bln,thn);
-  const grid = document.querySelector('#page-content .stat-grid');
-  // (scorecards tetap untuk periode berjalan; filter hanya untuk tabel riwayat)
+  // Recalc scorecards by physical date
+  const cf = calcCashflowByDate(bln,thn);
+  const stats = document.querySelectorAll('#page-content .stat-grid .stat-val');
+  // Update Income, Spending, Transfer scorecard (index 1,2,3 — index 0 is Available Cash)
+  if(stats[1]) stats[1].textContent = fRp(cf.income);
+  if(stats[2]) stats[2].textContent = fRp(cf.spend);
+  if(stats[3]) stats[3].textContent = fRp(cf.saving);
 }
 
 // ════════════════════════════════════════════════════════════
