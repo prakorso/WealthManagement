@@ -387,7 +387,6 @@ hr.dv{border:none;border-top:1px solid var(--border);margin:20px 0}
       <div class="nav-section">Menu</div>
       <div class="nav-item active" data-page="overview" onclick="gotoPage('overview',this)"><i class="ti ti-layout-dashboard"></i> Overview</div>
       <div class="nav-item" data-page="cashflow" onclick="gotoPage('cashflow',this)"><i class="ti ti-arrows-exchange"></i> Cashflow</div>
-      <div class="nav-item" data-page="budget" onclick="gotoPage('budget',this)"><i class="ti ti-chart-pie"></i> Alokasi</div>
       <div class="nav-item" data-page="kewajiban" onclick="gotoPage('kewajiban',this)"><i class="ti ti-checklist"></i> Kewajiban</div>
       <div class="nav-section">Investasi</div>
       <div class="nav-item" data-page="portfolio" onclick="gotoPage('portfolio',this)"><i class="ti ti-briefcase"></i> Portfolio</div>
@@ -793,6 +792,7 @@ function calcAssetAllocation(){
 
   const segs = [
     {label:'Cash',     val:cash,     color:'#2dd4bf'},
+    {label:'Savings',  val:(()=>{ const s=getSaldoTabungan(); return s!=null&&s>0?s:0; })(), color:'#34d399'},
     {label:'Stocks',   val:stocks,   color:'#60a5fa'},
     {label:'Bitcoin',  val:bitcoin,  color:'#d4a84b'},
     {label:'Crypto',   val:crypto,   color:'#f97316'},
@@ -1912,7 +1912,7 @@ function pagePortfolio(){
       <div class="chart-wrap" style="height:240px"><canvas id="ch-port-alloc"></canvas></div>
     </div>
     <div class="chart-card" style="margin:0">
-      <div class="chart-hdr"><div class="chart-title">📊 P/L per Jenis Aset</div></div>
+      <div class="chart-hdr"><div class="chart-title">📊 Realized vs Unrealized P/L</div></div>
       <div class="chart-wrap" style="height:240px"><canvas id="ch-port-pnl"></canvas></div>
     </div>
   </div>
@@ -2041,26 +2041,26 @@ function renderPortfolioCharts(){
       options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'right',labels:{color:'#8892a4',font:{size:11},padding:10}},tooltip:{callbacks:{label:ctx=>`${ctx.label}: ${fRp(ctx.raw)} (${P.totalNilai>0?(ctx.raw/P.totalNilai*100).toFixed(1):0}%)`}}}}
     });
   }
-  // P/L per Jenis Aset bar chart
+  // Realized vs Unrealized P/L per instrumen
   const pnlCtx = document.getElementById('ch-port-pnl')?.getContext('2d');
   if(pnlCtx){
-    const segs = P.byTipe.filter(b=>{ const tipeKey=b.tipe==='Bitcoin'?'BTC':b.tipe; const hasRealized=portPositions.filter(p=>tipeKey==='BTC'?p.kode==='BTC':p.tipe===tipeKey).some(p=>p.realizedPnl); return b.modal>0||hasRealized; });
-    const unrealized = segs.map(b=>b.nilai-b.modal);
-    const realized = segs.map(b=>{
-      const tipeKey=b.tipe==='Bitcoin'?'BTC':b.tipe;
-      return portPositions.filter(p=>tipeKey==='BTC'?p.kode==='BTC':p.tipe===tipeKey).reduce((s,p)=>s+(p.realizedPnl||0),0);
-    });
+    const instruments = portPositions.filter(p=>(p.unrealizedPnl!=null&&p.unrealizedPnl!==0)||(p.realizedPnl&&p.realizedPnl!==0));
+    // Kalau tidak ada instrumen saham yang punya P/L data, tampilkan semua posisi aktif
+    const display = instruments.length>0 ? instruments : portPositions.filter(p=>p.modal>0);
+    const labels = display.map(p=>p.kode);
+    const unrealized = display.map(p=>p.unrealizedPnl||0);
+    const realized = display.map(p=>p.realizedPnl||0);
     if(CHARTS.portPnl) CHARTS.portPnl.destroy();
     CHARTS.portPnl=new Chart(pnlCtx,{
       type:'bar',
       data:{
-        labels:segs.map(s=>s.tipe),
+        labels,
         datasets:[
-          {label:'Unrealized P/L',data:unrealized,backgroundColor:unrealized.map(v=>v>=0?'rgba(82,196,126,.7)':'rgba(240,85,88,.7)'),borderRadius:4},
-          {label:'Realized P/L',data:realized,backgroundColor:realized.map(v=>v>=0?'rgba(82,196,126,.4)':'rgba(240,85,88,.4)'),borderRadius:4}
+          {label:'Unrealized P/L',data:unrealized,backgroundColor:unrealized.map(v=>v>=0?'rgba(96,165,250,.8)':'rgba(240,85,88,.7)'),borderRadius:4},
+          {label:'Realized P/L',data:realized,backgroundColor:realized.map(v=>v>=0?'rgba(52,211,153,.8)':'rgba(240,85,88,.4)'),borderRadius:4}
         ]
       },
-      options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{labels:{color:'#8892a4',font:{size:11}}},tooltip:{callbacks:{label:ctx=>`${ctx.dataset.label}: ${fRp(ctx.raw)}`}}},scales:{x:{ticks:{color:'#4a5268',font:{size:11}},grid:{display:false}},y:{ticks:{color:'#4a5268',callback:v=>v>=0?'+'+Math.round(v/1e6)+'jt':Math.round(v/1e6)+'jt'},grid:{color:'rgba(255,255,255,.04)'}}}}
+      options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{labels:{color:'#8892a4',font:{size:11}}},tooltip:{callbacks:{label:ctx=>`${ctx.dataset.label}: ${fRp(ctx.raw)}`}}},scales:{x:{ticks:{color:'#4a5268',font:{size:11}},grid:{display:false}},y:{ticks:{color:'#4a5268',callback:v=>{const m=Math.abs(v)>=1e6?+(v/1e6).toFixed(1)+'jt':+(v/1e3).toFixed(0)+'rb'; return v>=0?'+'+m:'-'+Math.abs(v)>=1e6?(Math.abs(v)/1e6).toFixed(1)+'jt':(Math.abs(v)/1e3).toFixed(0)+'rb'}},grid:{color:'rgba(255,255,255,.04)'}}}}
     });
   }
 }
