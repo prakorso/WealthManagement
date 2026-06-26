@@ -1203,52 +1203,8 @@ function pageOverview(){
         '</div>';
       }).join('');
 
-  // ── Commitments summary fragment ───────────────────────
-  const upcomingCommit = commit.pending.slice().sort((a,b)=>{
-    const da=parseDueDate(a.dueDate),db=parseDueDate(b.dueDate);
-    if(!da)return 1; if(!db)return -1; return da-db;
-  }).slice(0,3);
-  let commitHtml = '';
-  if(commit.total>0){
-    commitHtml = '<div class="card" style="margin-bottom:14px">'+
-      '<div class="card-title">📅 Komitmen Mendatang <button class="btn btn-ghost btn-xs" id="ov-commit-btn" style="font-size:10px;color:var(--t3)">Lihat semua →</button></div>'+
-      '<div style="display:flex;gap:10px;margin-bottom:12px;flex-wrap:wrap">'+
-        '<div style="flex:1;min-width:120px;background:var(--bg2);border-radius:var(--r);padding:10px;text-align:center"><div style="font-size:10px;color:var(--t3);margin-bottom:4px;text-transform:uppercase">Total Komitmen</div><div style="font-family:var(--mono);font-size:14px;color:var(--rose);font-weight:500">'+fRp(commit.total)+'</div></div>'+
-        '<div style="flex:1;min-width:120px;background:var(--bg2);border-radius:var(--r);padding:10px;text-align:center"><div style="font-size:10px;color:var(--t3);margin-bottom:4px;text-transform:uppercase">Cash Setelah Bayar</div><div style="font-family:var(--mono);font-size:14px;color:'+(cashAfterCommit>=0?'var(--teal)':'var(--rose)')+';font-weight:500">'+fRp(cashAfterCommit)+'</div></div>'+
-      '</div>'+
-      upcomingCommit.map(c=>{
-        const dleft=daysUntil(c.dueDate);
-        const chip = dleft==null?'':dleft<0?'<span class="chip dn" style="font-size:10px">Telat</span>':dleft<=7?'<span class="chip gold" style="font-size:10px">'+dleft+'h</span>':'<span class="chip neu" style="font-size:10px">'+dleft+'h</span>';
-        return '<div style="display:flex;align-items:center;justify-content:space-between;padding:8px 0;border-top:1px solid var(--border)"><div><div style="font-size:12px;font-weight:500">'+(c.deskripsi||c.kategori)+'</div><div style="color:var(--t3);font-size:10px">'+fmtTgl(c.dueDate)+' · '+c.kategori+'</div></div><div style="display:flex;align-items:center;gap:6px;flex-shrink:0">'+chip+'<span style="font-family:var(--mono);font-size:11px;color:var(--rose)">'+fRp(c.nominal)+'</span></div></div>';
-      }).join('')+
-      '</div>';
-  }
-
-  // ── Capital Allocation Panel fragment ──────────────────
-  let allocPlan;
-  try{ allocPlan = JSON.parse(STATE.config.alokasi_plan||'null'); }catch(e){ allocPlan=null; }
-  if(!allocPlan) allocPlan = [
-    {kategori:'Living Expense',persen:30,warna:'var(--rose)'},
-    {kategori:'Investment',persen:40,warna:'var(--gold)'},
-    {kategori:'Business',persen:20,warna:'var(--violet)'},
-    {kategori:'Cash Reserve',persen:10,warna:'var(--teal)'},
-  ];
-  // Available capital = cash setelah komitmen, sisakan buffer 2x avg spending
-  const buffer = avgSpend*2;
-  const availableCapital = Math.max(0, cashAfterCommit - buffer);
-  const allocHtml = '<div class="card" style="margin-bottom:14px">'+
-    '<div class="card-title">🎯 Capital Allocation <button class="btn btn-ghost btn-xs" id="ov-alloc-btn" style="font-size:10px;color:var(--t3)">Atur →</button></div>'+
-    '<div style="background:var(--bg2);border-radius:var(--r);padding:14px;margin-bottom:12px;text-align:center">'+
-      '<div style="font-size:10px;color:var(--t3);text-transform:uppercase;letter-spacing:.06em;margin-bottom:4px">Dana Siap Dialokasikan</div>'+
-      '<div style="font-family:var(--mono);font-size:22px;color:var(--gold);font-weight:600">'+fRp(availableCapital)+'</div>'+
-      '<div style="font-size:10px;color:var(--t3);margin-top:4px">Cash setelah komitmen − buffer 2 bulan ('+fRp(buffer)+')</div>'+
-    '</div>'+
-    allocPlan.map(p=>{
-      const amt = availableCapital*p.persen/100;
-      return '<div style="display:flex;align-items:center;justify-content:space-between;padding:8px 0;border-top:1px solid var(--border)"><div style="display:flex;align-items:center;gap:8px"><span style="width:10px;height:10px;border-radius:2px;background:'+p.warna+';display:inline-block"></span><span style="font-size:12px;font-weight:500">'+p.kategori+'</span><span style="font-size:10px;color:var(--t3)">'+p.persen+'%</span></div><span style="font-family:var(--mono);font-size:12px;color:var(--t1)">'+fRp(amt)+'</span></div>';
-    }).join('')+
-    '<div class="info-note" style="margin-top:12px"><i class="ti ti-info-circle" style="font-size:13px;flex-shrink:0"></i> Rekomendasi alokasi berdasarkan plan kamu. Hanya panduan, tidak melakukan transaksi.</div>'+
-    '</div>';
+  // Panel "Komitmen Mendatang" & "Capital Allocation" dihapus dari Overview —
+  // datanya tidak sinkron (komitmen/utang sudah dikelola di tab Kewajiban) dan membingungkan.
 
   return `
   <div class="nw-hero">
@@ -1339,12 +1295,6 @@ function pageOverview(){
     <div class="card-title" style="margin-bottom:12px">🧠 Decision Insights</div>
     ${insightHtml}
   </div>
-
-
-
-  ${commitHtml}
-
-  ${allocHtml}
 
   ${fireTarget>0?`
   <div class="card" style="margin-bottom:14px">
@@ -3266,8 +3216,6 @@ function initPageEvents(page){
       renderOverviewAlloc();
       document.getElementById('ov-bisnis-btn')?.addEventListener('click',()=>gotoPage('bisnis'));
       document.getElementById('ov-cf-btn')?.addEventListener('click',()=>gotoPage('cashflow'));
-      document.getElementById('ov-commit-btn')?.addEventListener('click',()=>gotoPage('kewajiban'));
-      document.getElementById('ov-alloc-btn')?.addEventListener('click',()=>gotoPage('budget'));
     },50);
   }
 }
