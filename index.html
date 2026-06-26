@@ -3723,11 +3723,24 @@ async function submitSell(kode, tipe, availableLot, avgCost){
   STATE.investasi.push(sellRec);
 
   const akunTujuan = document.getElementById('sell-akun')?.value || getRekeningTabungan() || getRekening()[0] || '';
-  if(doLogCF){
+  const netProceeds = Math.round(proceeds-fee);
+  const rekTab = getRekeningTabungan();
+  const isToTabungan = rekTab && akunTujuan.toLowerCase()===rekTab.toLowerCase();
+
+  if(isToTabungan){
+    // Proceeds ke tabungan: hanya update tabungan_saldo, jangan catat cashflow pemasukan
+    // (mencegah double-count: tabunganVal di networth sudah terpisah dari cashVal)
+    const curTab = getSaldoTabungan();
+    if(curTab!=null){
+      const newTab = curTab + netProceeds;
+      STATE.config.tabungan_saldo = String(newTab);
+      callSheet({action:'setConfig', key:'tabungan_saldo', value:String(newTab)}).catch(()=>{});
+    }
+  } else if(doLogCF){
+    // Proceeds ke rekening non-tabungan: catat sebagai cashflow pemasukan biasa
     const d   = new Date(tgl);
     const bln = d.toLocaleString('id-ID',{month:'long'});
     const thn = d.getFullYear().toString();
-    const netProceeds = Math.round(proceeds-fee);
     const txRec = {
       id:'tx'+Date.now(), tanggal:fd, tipe:'pemasukan',
       deskripsi:'Jual '+kode+' '+qty+(isSaham?' lot':'')+' @ '+fRp(harga),
@@ -3737,16 +3750,6 @@ async function submitSell(kode, tipe, availableLot, avgCost){
     };
     STATE.transactions.push(txRec);
     callSheet({action:'addTransaction',...txRec}).catch(()=>{});
-    // Tambah ke saldo tabungan jika tujuannya rekening tabungan
-    const rekTab = getRekeningTabungan();
-    if(rekTab && akunTujuan.toLowerCase()===rekTab.toLowerCase()){
-      const curTab = getSaldoTabungan();
-      if(curTab!=null){
-        const newTab = curTab + netProceeds;
-        STATE.config.tabungan_saldo = String(newTab);
-        callSheet({action:'setConfig', key:'tabungan_saldo', value:String(newTab)}).catch(()=>{});
-      }
-    }
   }
 
   closeModal();
