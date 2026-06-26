@@ -1781,10 +1781,6 @@ function pageBtcDca(){
       <div class="fg"><label>Harga BTC (Rp)</label><input type="number" id="dca-harga" placeholder="${STATE.btcPrice||'auto'}"/></div>
       <div class="fg"><label>&nbsp;</label><button class="btn btn-gold btn-full" onclick="submitDca()"><i class="ti ti-plus"></i> Catat</button></div>
     </div>
-    <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
-      <input type="checkbox" id="dca-cf" checked style="width:16px;height:16px;accent-color:var(--gold);cursor:pointer"/>
-      <label for="dca-cf" style="font-size:12px;color:var(--t2);cursor:pointer">Catat otomatis sebagai pengeluaran di Cashflow</label>
-    </div>
     <div id="dca-toast" class="toast"></div>
   </div>
 
@@ -2119,10 +2115,6 @@ function pageCrypto(){
       <div class="fg"><label>Modal total (Rp)</label><input type="number" id="cry-modal" placeholder="Auto dari qty × harga"/></div>
       <div class="fg"><label>&nbsp;</label><button class="btn btn-gold btn-full" onclick="submitCrypto()"><i class="ti ti-plus"></i> Tambah</button></div>
     </div>
-    <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
-      <input type="checkbox" id="cry-cf" checked style="width:16px;height:16px;accent-color:var(--gold);cursor:pointer"/>
-      <label for="cry-cf" style="font-size:12px;color:var(--t2);cursor:pointer">Catat otomatis sebagai pengeluaran di Cashflow</label>
-    </div>
     <div id="cry-toast" class="toast"></div>
 
     <hr style="border:none;border-top:1px solid var(--border);margin:16px 0"/>
@@ -2226,12 +2218,6 @@ function pageSaham(){
         <select id="sh-akun">
           ${getAllAccounts().filter(a=>!a.disabled).map(a=>`<option value="${a.nama}"${a.nama===(getRekeningTabungan()||'')?' selected':''}>${a.nama}${a.nama===getRekeningTabungan()?' (tabungan)':''}</option>`).join('')}
         </select>
-      </div>
-      <div class="fg"><label>&nbsp;</label>
-        <div style="display:flex;align-items:center;gap:8px;height:40px">
-          <input type="checkbox" id="sh-cf" checked style="width:16px;height:16px;accent-color:var(--gold);cursor:pointer"/>
-          <label for="sh-cf" style="font-size:12px;color:var(--t2);cursor:pointer">Catat otomatis ke Cashflow</label>
-        </div>
       </div>
     </div>
     <button class="btn btn-gold btn-full" onclick="submitSaham()" style="margin-bottom:8px"><i class="ti ti-plus"></i> Catat Pembelian</button>
@@ -3445,15 +3431,8 @@ async function submitDca(){
   const doCf = document.getElementById('dca-cf')?.checked !== false;
   const tx = {id:'dca_'+Date.now(), tanggal:fd, beli, harga};
   STATE.btcDca.push(tx);
-  if(doCf){
-    const d=new Date(tgl); const blnCf=BULAN_LIST[d.getMonth()]; const thnCf=String(d.getFullYear());
-    const akunCf = getRekeningTabungan()||STATE.config.akun_default||getRekening()[0]||'';
-    const tipeTab = getRekeningTabungan()?'tabungan':'pengeluaran';
-    const cfTx={id:'tx_'+Date.now(),tanggal:fd,tipe:tipeTab,deskripsi:'BTC DCA',kategori:'Investasi',subkategori:'BTC DCA',nominal:beli,akun:akunCf,bulan:blnCf,tahun:thnCf,catatan:'auto-inv'};
-    STATE.transactions.push(cfTx);
-    callSheet({action:'addTransaction',...cfTx}).catch(()=>{});
-    deductSaldoTabungan(beli);
-  }
+  // Investasi selalu dari tabungan — hanya potong saldo, tidak catat cashflow
+  deductSaldoTabungan(beli);
   document.getElementById('dca-tgl').value = today();
   document.getElementById('dca-beli').value='';
   document.getElementById('dca-harga').value='';
@@ -3571,12 +3550,8 @@ async function submitCrypto(){
   const doCf = document.getElementById('cry-cf')?.checked !== false;
   const inv = {id:'c'+Date.now(),tanggal:fd,kode,tipe:'Crypto',lotQty:qty,hargaBeli:harga,modal,catatan:''};
   STATE.investasi.push(inv);
-  if(doCf){
-    const d=new Date(tgl); const blnCf=BULAN_LIST[d.getMonth()]; const thnCf=String(d.getFullYear());
-    const cfTx={id:'tx_'+Date.now(),tanggal:fd,tipe:'pengeluaran',deskripsi:'Beli Crypto '+kode+' '+qty,kategori:'Investasi',subkategori:'Crypto',nominal:modal,akun:STATE.config.akun_default||getRekening()[0]||'',bulan:blnCf,tahun:thnCf,catatan:'auto-inv'};
-    STATE.transactions.push(cfTx);
-    callSheet({action:'addTransaction',...cfTx}).catch(()=>{});
-  }
+  // Investasi selalu dari tabungan — hanya potong saldo, tidak catat cashflow
+  deductSaldoTabungan(modal);
   renderPage('crypto');
   const ok = await callSheet({action:'addInvestasi',tanggal:fd,kode,tipe:'Crypto',lotQty:qty,hargaBeli:harga,modal,catatan:''});
   showToast('cry-toast',ok.success?'✓ Tersimpan ke Sheets!'+(doCf?' · Cashflow dicatat':''):'⚠ Tersimpan lokal',ok.success?'ok':'warn');
@@ -3597,14 +3572,8 @@ async function submitSaham(){
   const catatan = akunSumber ? 'akun:'+akunSumber : '';
   const inv = {id:'s'+Date.now(),tanggal:fd,kode,tipe:'Saham',lotQty:lot,hargaBeli:harga,modal,catatan};
   STATE.investasi.push(inv);
-  if(doCf){
-    const d=new Date(tgl); const blnCf=BULAN_LIST[d.getMonth()]; const thnCf=String(d.getFullYear());
-    const tipeTab = isTabungan?'tabungan':'pengeluaran';
-    const cfTx={id:'tx_'+Date.now(),tanggal:fd,tipe:tipeTab,deskripsi:'Beli Saham '+kode+' '+lot+' lot',kategori:'Investasi',subkategori:'Saham',nominal:modal,akun:akunSumber,bulan:blnCf,tahun:thnCf,catatan:'auto-inv'};
-    STATE.transactions.push(cfTx);
-    callSheet({action:'addTransaction',...cfTx}).catch(()=>{});
-    if(isTabungan) deductSaldoTabungan(modal);
-  }
+  // Investasi selalu dari tabungan — hanya potong saldo, tidak catat cashflow
+  deductSaldoTabungan(modal);
   renderPage('saham');
   const ok = await callSheet({action:'addInvestasi',tanggal:fd,kode,tipe:'Saham',lotQty:lot,hargaBeli:harga,modal,catatan});
   showToast('sh-toast',ok.success?'✓ Tersimpan ke Sheets!'+(doCf?' · Cashflow dicatat':''):'⚠ Tersimpan lokal',ok.success?'ok':'warn');
@@ -3670,10 +3639,6 @@ function openSellModal(kode, tipe, availableLot, avgCostPerUnit){
       <div style="font-size:10px;color:var(--t3);text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px">Estimasi Transaksi</div>
       <div id="sell-est-inner" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:8px;font-size:12px"></div>
     </div>
-    <label style="display:flex;align-items:center;gap:8px;font-size:12px;color:var(--t2);margin-bottom:14px;cursor:pointer">
-      <input type="checkbox" id="sell-catat" checked style="width:auto;flex-shrink:0"/>
-      Catat proceeds ke Cashflow (Pemasukan — Investasi)
-    </label>
     <button class="btn btn-rose btn-full" onclick="submitSell('${kode}','${tipe}',${availableLot},${avgCostPerUnit})">
       <i class="ti ti-trending-down"></i> Catat Penjualan
     </button>`;
