@@ -832,13 +832,48 @@ async function deductSaldoTabungan(nominal, label){
   STATE.config.tabungan_saldo = String(newVal);
   callSheet({action:'setConfig', key:'tabungan_saldo', value:String(newVal)}).catch(()=>{});
 }
+async function addSaldoTabungan(nominal){
+  const cur = getSaldoTabungan();
+  if(cur==null) return;
+  const newVal = cur + nominal;
+  STATE.config.tabungan_saldo = String(newVal);
+  callSheet({action:'setConfig', key:'tabungan_saldo', value:String(newVal)}).catch(()=>{});
+}
+
+// Penanda transaksi cashflow yang berasal dari investasi (beli/jual saham, BTC DCA, crypto).
+// Transaksi ini TETAP tampil di daftar cashflow, tapi TIDAK mempengaruhi saldo cash rekening
+// maupun scorecard income/spending/savings — efeknya hanya ke saldo Tabungan.
+function isInvestasiTx(t){
+  const c = String(t.catatan||'');
+  return c==='auto-inv' || c.indexOf('Auto-catat penjualan')===0 || t.kategori==='Investasi';
+}
+
+// Catat transaksi investasi ke cashflow (untuk riwayat). Selalu pakai akun Tabungan,
+// kategori 'Investasi' + catatan penanda → otomatis dikecualikan dari cash & scorecard.
+function recordInvestasiCashflow(o){
+  const d   = new Date(o.tgl);
+  const bln = BULAN_LIST[d.getMonth()];
+  const thn = String(d.getFullYear());
+  const akun = getRekeningTabungan() || STATE.config.akun_default || getRekening()[0] || '';
+  const cfTx = {
+    id:'tx_'+Date.now()+'_'+Math.floor(o.nominal),
+    tanggal:o.tanggal, tipe:o.tipe,
+    deskripsi:o.deskripsi, kategori:'Investasi', subkategori:o.subkategori||'',
+    nominal:o.nominal, akun, bulan:bln, tahun:thn,
+    catatan:o.catatan||'auto-inv'
+  };
+  STATE.transactions.push(cfTx);
+  callSheet({action:'addTransaction',...cfTx}).catch(()=>{});
+}
 
 function calcCashflowByDate(bulan, tahun){
   // Filter by physical transaction date — for cashflow view
   const txs = STATE.transactions.filter(t => t.bulan===bulan && t.tahun===tahun);
-  const income = txs.filter(t=>t.tipe==='pemasukan').reduce((a,t)=>a+t.nominal,0);
-  const spend  = txs.filter(t=>t.tipe==='pengeluaran').reduce((a,t)=>a+t.nominal,0);
-  const saving = txs.filter(t=>t.tipe==='tabungan').reduce((a,t)=>a+t.nominal,0);
+  // Transaksi investasi tetap tampil di daftar (txs) tapi dikecualikan dari total scorecard
+  const reg = txs.filter(t=>!isInvestasiTx(t));
+  const income = reg.filter(t=>t.tipe==='pemasukan').reduce((a,t)=>a+t.nominal,0);
+  const spend  = reg.filter(t=>t.tipe==='pengeluaran').reduce((a,t)=>a+t.nominal,0);
+  const saving = reg.filter(t=>t.tipe==='tabungan').reduce((a,t)=>a+t.nominal,0);
   return {income,spend,saving,sisa:income-spend-saving,txs};
 }
 
@@ -849,9 +884,10 @@ function calcCashflowMonth(bulan,tahun){
     const pThn = t.periodeTahun || t.tahun;
     return pBln===bulan && pThn===tahun;
   });
-  const income  = txs.filter(t=>t.tipe==='pemasukan').reduce((a,t)=>a+t.nominal,0);
-  const spend   = txs.filter(t=>t.tipe==='pengeluaran').reduce((a,t)=>a+t.nominal,0);
-  const saving  = txs.filter(t=>t.tipe==='tabungan').reduce((a,t)=>a+t.nominal,0);
+  const reg = txs.filter(t=>!isInvestasiTx(t));
+  const income  = reg.filter(t=>t.tipe==='pemasukan').reduce((a,t)=>a+t.nominal,0);
+  const spend   = reg.filter(t=>t.tipe==='pengeluaran').reduce((a,t)=>a+t.nominal,0);
+  const saving  = reg.filter(t=>t.tipe==='tabungan').reduce((a,t)=>a+t.nominal,0);
   return {income,spend,saving,sisa:income-spend-saving,txs};
 }
 
@@ -3190,18 +3226,6 @@ function pageSettings(){
     <div id="rek-tab-toast" class="toast" style="margin-top:8px"></div>
   </div>
 
-  ${(()=>{
-    const inv = getInvestasiCashflowTxs();
-    if(!inv.length) return '';
-    const total = inv.reduce((a,t)=>a+(Number(t.nominal)||0),0);
-    return `<div class="card" style="margin-bottom:14px;border-color:var(--rose-bd)">
-      <div class="card-title">🧹 Bersihkan Cashflow Investasi</div>
-      <div style="font-size:12px;color:var(--t3);margin-bottom:10px">Ada <strong style="color:var(--rose)">${inv.length}</strong> transaksi investasi lama (beli/jual saham, BTC DCA, crypto) yang masih tercatat di Cashflow senilai <strong>${fRp(total)}</strong>. Ini membuat Available Cash kamu salah. Dengan sistem baru, investasi hanya memotong/menambah Tabungan — tidak menyentuh Cashflow. Hapus semua transaksi ini agar cash kembali benar. <strong>Saldo Tabungan tidak akan berubah.</strong></div>
-      <button class="btn btn-rose btn-full" onclick="cleanupInvestasiCashflow()"><i class="ti ti-trash"></i> Hapus ${inv.length} Transaksi Investasi dari Cashflow</button>
-      <div id="cleanup-inv-toast" class="toast" style="margin-top:8px"></div>
-    </div>`;
-  })()}
-
   <div class="card" style="margin-bottom:14px">
     <div class="card-title">🎯 Target Net Worth</div>
     <div class="fgrid fgrid-2" style="margin-bottom:8px">
@@ -3440,17 +3464,17 @@ async function submitDca(){
   const harga= parseFloat(document.getElementById('dca-harga')?.value)||STATE.btcPrice;
   if(!tgl||!beli||!harga){ showToast('dca-toast','Lengkapi semua field.','err'); return; }
   const fd = fmtTgl(tgl);
-  const doCf = document.getElementById('dca-cf')?.checked !== false;
   const tx = {id:'dca_'+Date.now(), tanggal:fd, beli, harga};
   STATE.btcDca.push(tx);
-  // Investasi selalu dari tabungan — hanya potong saldo, tidak catat cashflow
+  // Investasi: catat di cashflow (penanda investasi → tidak potong cash) + potong saldo Tabungan
+  recordInvestasiCashflow({tanggal:fd, tgl, tipe:'pengeluaran', deskripsi:'BTC DCA', subkategori:'BTC DCA', nominal:beli});
   deductSaldoTabungan(beli);
   document.getElementById('dca-tgl').value = today();
   document.getElementById('dca-beli').value='';
   document.getElementById('dca-harga').value='';
   renderPage('btcdca');
   const ok = await callSheet({action:'addBtcDca',tanggal:fd,beli,harga});
-  showToast('dca-toast', ok.success?'✓ Tersimpan ke Sheets!'+(doCf?' · Cashflow dicatat':''):'⚠ Tersimpan lokal', ok.success?'ok':'warn');
+  showToast('dca-toast', ok.success?'✓ Tersimpan ke Sheets! · Cashflow dicatat':'⚠ Tersimpan lokal', ok.success?'ok':'warn');
 }
 
 function editDca(idx){
@@ -3559,14 +3583,14 @@ async function submitCrypto(){
   const modal= parseFloat(document.getElementById('cry-modal')?.value)||(qty*harga)||0;
   if(!tgl||!kode||!qty){ showToast('cry-toast','Lengkapi tanggal, kode, dan qty.','err'); return; }
   const fd = fmtTgl(tgl);
-  const doCf = document.getElementById('cry-cf')?.checked !== false;
   const inv = {id:'c'+Date.now(),tanggal:fd,kode,tipe:'Crypto',lotQty:qty,hargaBeli:harga,modal,catatan:''};
   STATE.investasi.push(inv);
-  // Investasi selalu dari tabungan — hanya potong saldo, tidak catat cashflow
+  // Investasi: catat di cashflow (tidak potong cash) + potong saldo Tabungan
+  recordInvestasiCashflow({tanggal:fd, tgl, tipe:'pengeluaran', deskripsi:'Beli Crypto '+kode+' '+qty, subkategori:'Crypto', nominal:modal});
   deductSaldoTabungan(modal);
   renderPage('crypto');
   const ok = await callSheet({action:'addInvestasi',tanggal:fd,kode,tipe:'Crypto',lotQty:qty,hargaBeli:harga,modal,catatan:''});
-  showToast('cry-toast',ok.success?'✓ Tersimpan ke Sheets!'+(doCf?' · Cashflow dicatat':''):'⚠ Tersimpan lokal',ok.success?'ok':'warn');
+  showToast('cry-toast',ok.success?'✓ Tersimpan ke Sheets! · Cashflow dicatat':'⚠ Tersimpan lokal',ok.success?'ok':'warn');
 }
 
 // ── Saham ────────────────────────────────────────────────────
@@ -3578,17 +3602,16 @@ async function submitSaham(){
   if(!tgl||!kode||!lot||!harga){ showToast('sh-toast','Lengkapi semua field.','err'); return; }
   const fd = fmtTgl(tgl);
   const modal = lot*100*harga;
-  const doCf  = document.getElementById('sh-cf')?.checked !== false;
   const akunSumber = document.getElementById('sh-akun')?.value || getRekeningTabungan() || getRekening()[0] || '';
-  const isTabungan = akunSumber === getRekeningTabungan();
   const catatan = akunSumber ? 'akun:'+akunSumber : '';
   const inv = {id:'s'+Date.now(),tanggal:fd,kode,tipe:'Saham',lotQty:lot,hargaBeli:harga,modal,catatan};
   STATE.investasi.push(inv);
-  // Investasi selalu dari tabungan — hanya potong saldo, tidak catat cashflow
+  // Investasi: catat di cashflow (tidak potong cash) + potong saldo Tabungan
+  recordInvestasiCashflow({tanggal:fd, tgl, tipe:'pengeluaran', deskripsi:'Beli Saham '+kode+' '+lot+' lot', subkategori:'Saham', nominal:modal});
   deductSaldoTabungan(modal);
   renderPage('saham');
   const ok = await callSheet({action:'addInvestasi',tanggal:fd,kode,tipe:'Saham',lotQty:lot,hargaBeli:harga,modal,catatan});
-  showToast('sh-toast',ok.success?'✓ Tersimpan ke Sheets!'+(doCf?' · Cashflow dicatat':''):'⚠ Tersimpan lokal',ok.success?'ok':'warn');
+  showToast('sh-toast',ok.success?'✓ Tersimpan ke Sheets! · Cashflow dicatat':'⚠ Tersimpan lokal',ok.success?'ok':'warn');
 }
 
 async function deleteSahamTx(idx){
@@ -3637,16 +3660,10 @@ function openSellModal(kode, tipe, availableLot, avgCostPerUnit){
           oninput="calcSellEst(${availableLot},${avgCostPerUnit},${isSaham?1:0})"/>
       </div>
     </div>
-    <div class="fgrid fgrid-2" style="margin-bottom:10px">
-      <div class="fg"><label>Rekening Tujuan Proceeds</label>
-        <select id="sell-akun">
-          ${getAllAccounts().filter(a=>!a.disabled).map(a=>`<option value="${a.nama}"${a.nama===(getRekeningTabungan()||'')?' selected':''}>${a.nama}${a.nama===getRekeningTabungan()?' (tabungan)':''}</option>`).join('')}
-        </select>
-      </div>
-      <div class="fg"><label>Catatan (opsional)</label>
-        <input type="text" id="sell-note" placeholder="Misal: target tercapai, rebalancing"/>
-      </div>
+    <div class="fg" style="margin-bottom:10px"><label>Catatan (opsional)</label>
+      <input type="text" id="sell-note" placeholder="Misal: target tercapai, rebalancing"/>
     </div>
+    ${getRekeningTabungan()?`<div class="info-note" style="margin-bottom:10px"><i class="ti ti-piggy-bank" style="font-size:13px;flex-shrink:0"></i> Hasil penjualan otomatis masuk ke <strong>Tabungan (${getRekeningTabungan()})</strong> — tidak menambah cash.</div>`:''}
     <div id="sell-est" style="background:var(--bg2);border-radius:var(--r);padding:12px 14px;margin-bottom:12px;display:none">
       <div style="font-size:10px;color:var(--t3);text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px">Estimasi Transaksi</div>
       <div id="sell-est-inner" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:8px;font-size:12px"></div>
@@ -3685,7 +3702,6 @@ async function submitSell(kode, tipe, availableLot, avgCost){
   const harga    = parseFloat(document.getElementById('sell-harga')?.value)||0;
   const fee      = parseFloat(document.getElementById('sell-fee')?.value)||0;
   const note     = document.getElementById('sell-note')?.value?.trim()||'';
-  const doLogCF  = document.getElementById('sell-catat')?.checked;
 
   if(!tgl){ showToast('modal-toast','Isi tanggal jual.','err'); return; }
   if(qty<=0){ showToast('modal-toast','Qty harus lebih dari 0.','err'); return; }
@@ -3699,35 +3715,14 @@ async function submitSell(kode, tipe, availableLot, avgCost){
   const sellRec  = {id:'sx'+Date.now(),tanggal:fd,kode,tipe,lotQty:qty,hargaBeli:harga,modal:Math.round(proceeds),catatan};
   STATE.investasi.push(sellRec);
 
-  const akunTujuan = document.getElementById('sell-akun')?.value || getRekeningTabungan() || getRekening()[0] || '';
   const netProceeds = Math.round(proceeds-fee);
-  const rekTab = getRekeningTabungan();
-  const isToTabungan = rekTab && akunTujuan.toLowerCase()===rekTab.toLowerCase();
-
-  if(isToTabungan){
-    // Proceeds ke tabungan: hanya update tabungan_saldo, jangan catat cashflow pemasukan
-    // (mencegah double-count: tabunganVal di networth sudah terpisah dari cashVal)
-    const curTab = getSaldoTabungan();
-    if(curTab!=null){
-      const newTab = curTab + netProceeds;
-      STATE.config.tabungan_saldo = String(newTab);
-      callSheet({action:'setConfig', key:'tabungan_saldo', value:String(newTab)}).catch(()=>{});
-    }
-  } else if(doLogCF){
-    // Proceeds ke rekening non-tabungan: catat sebagai cashflow pemasukan biasa
-    const d   = new Date(tgl);
-    const bln = d.toLocaleString('id-ID',{month:'long'});
-    const thn = d.getFullYear().toString();
-    const txRec = {
-      id:'tx'+Date.now(), tanggal:fd, tipe:'pemasukan',
-      deskripsi:'Jual '+kode+' '+qty+(isSaham?' lot':'')+' @ '+fRp(harga),
-      kategori:'Investasi', subkategori:'', nominal:netProceeds,
-      akun:akunTujuan, bulan:bln, tahun:thn,
-      catatan:'Auto-catat penjualan '+kode
-    };
-    STATE.transactions.push(txRec);
-    callSheet({action:'addTransaction',...txRec}).catch(()=>{});
-  }
+  // Hasil jual: catat di cashflow (penanda investasi → tidak nambah cash) + tambah ke saldo Tabungan
+  recordInvestasiCashflow({
+    tanggal:fd, tgl, tipe:'pemasukan',
+    deskripsi:'Jual '+kode+' '+qty+(isSaham?' lot':'')+' @ '+fRp(harga),
+    subkategori:'', nominal:netProceeds, catatan:'Auto-catat penjualan '+kode
+  });
+  addSaldoTabungan(netProceeds);
 
   closeModal();
   if(tipe==='Saham') renderPage('saham');
@@ -3958,6 +3953,7 @@ function calcSaldoOtomatis(namaAkun){
   let saldo = 0;
   STATE.transactions.forEach(t=>{
     if(t.akun!==namaAkun) return;
+    if(isInvestasiTx(t)) return; // transaksi investasi tidak mempengaruhi saldo cash rekening
     if(t.tipe==='pemasukan') saldo += t.nominal;
     else saldo -= t.nominal; // pengeluaran & tabungan kurangi saldo rekening
   });
@@ -4151,41 +4147,6 @@ async function setSaldoTabungan(){
   STATE.config.tabungan_saldo = String(num);
   const ok = await callSheet({action:'setConfig', key:'tabungan_saldo', value:String(num)});
   showToast('rek-tab-toast', ok.success?`✓ Saldo tabungan diset ke ${fRp(num)}`:'⚠ Tersimpan lokal', ok.success?'ok':'warn');
-  renderPage('settings');
-}
-
-// Identifikasi transaksi cashflow yang berasal dari investasi (beli/jual saham, BTC DCA, crypto).
-// Penanda: catatan 'auto-inv' (semua pembelian) atau 'Auto-catat penjualan ...' (penjualan),
-// atau kategori 'Investasi' (mencakup yang penanda catatan-nya hilang karena edit manual).
-function getInvestasiCashflowTxs(){
-  return (STATE.transactions||[]).filter(t=>{
-    const c = String(t.catatan||'');
-    return c==='auto-inv' || c.indexOf('Auto-catat penjualan')===0 || t.kategori==='Investasi';
-  });
-}
-
-async function cleanupInvestasiCashflow(){
-  const targets = getInvestasiCashflowTxs();
-  if(!targets.length){ showToast('cleanup-inv-toast','Tidak ada transaksi investasi di cashflow.','warn'); return; }
-  const total = targets.reduce((a,t)=>a+(Number(t.nominal)||0),0);
-  if(!confirm(`Hapus ${targets.length} transaksi investasi dari Cashflow (total ${fRp(total)})?\n\nSaldo Tabungan TIDAK berubah. Tindakan ini permanen.`)) return;
-  // Hapus dari STATE dulu supaya UI langsung benar
-  const ids = new Set(targets.map(t=>t.id));
-  STATE.transactions = STATE.transactions.filter(t=>!ids.has(t.id));
-  renderPage('settings');
-  // Hapus dari Sheets satu per satu (GAS deleteTransaction hapus by id, harus sekuensial)
-  let ok=0, fail=0;
-  for(const t of targets){
-    try{
-      const r = await callSheet({action:'deleteTransaction', id:t.id});
-      if(r && r.success) ok++; else fail++;
-    }catch(e){ fail++; }
-    showToast('cleanup-inv-toast', `Menghapus… ${ok+fail}/${targets.length}`, 'warn', 60000);
-  }
-  showToast('cleanup-inv-toast', fail
-    ? `✓ ${ok} terhapus · ⚠ ${fail} gagal (refresh & ulangi jika perlu)`
-    : `✓ Semua ${ok} transaksi investasi dihapus dari Cashflow. Cash kamu sekarang benar.`,
-    fail?'warn':'ok', 8000);
   renderPage('settings');
 }
 
