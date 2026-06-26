@@ -3994,7 +3994,11 @@ function getSaldoAkun(acc){
 }
 
 function calcAvailableCash(){
-  return getAllAccounts().filter(a=>!a.disabled).reduce((sum,a)=>sum+getSaldoAkun(a),0);
+  // Rekening tabungan utama dikecualikan — sudah dihitung terpisah sebagai tabunganVal di calcNetWorth
+  const rekTab = (STATE.config.rekening_tabungan||'').toLowerCase();
+  return getAllAccounts()
+    .filter(a=>!a.disabled && (!rekTab || a.nama.toLowerCase()!==rekTab))
+    .reduce((sum,a)=>sum+getSaldoAkun(a),0);
 }
 
 // ── Commitments calc ────────────────────────────────────────
