@@ -3190,6 +3190,18 @@ function pageSettings(){
     <div id="rek-tab-toast" class="toast" style="margin-top:8px"></div>
   </div>
 
+  ${(()=>{
+    const inv = getInvestasiCashflowTxs();
+    if(!inv.length) return '';
+    const total = inv.reduce((a,t)=>a+(Number(t.nominal)||0),0);
+    return `<div class="card" style="margin-bottom:14px;border-color:var(--rose-bd)">
+      <div class="card-title">🧹 Bersihkan Cashflow Investasi</div>
+      <div style="font-size:12px;color:var(--t3);margin-bottom:10px">Ada <strong style="color:var(--rose)">${inv.length}</strong> transaksi investasi lama (beli/jual saham, BTC DCA, crypto) yang masih tercatat di Cashflow senilai <strong>${fRp(total)}</strong>. Ini membuat Available Cash kamu salah. Dengan sistem baru, investasi hanya memotong/menambah Tabungan — tidak menyentuh Cashflow. Hapus semua transaksi ini agar cash kembali benar. <strong>Saldo Tabungan tidak akan berubah.</strong></div>
+      <button class="btn btn-rose btn-full" onclick="cleanupInvestasiCashflow()"><i class="ti ti-trash"></i> Hapus ${inv.length} Transaksi Investasi dari Cashflow</button>
+      <div id="cleanup-inv-toast" class="toast" style="margin-top:8px"></div>
+    </div>`;
+  })()}
+
   <div class="card" style="margin-bottom:14px">
     <div class="card-title">🎯 Target Net Worth</div>
     <div class="fgrid fgrid-2" style="margin-bottom:8px">
@@ -4139,6 +4151,41 @@ async function setSaldoTabungan(){
   STATE.config.tabungan_saldo = String(num);
   const ok = await callSheet({action:'setConfig', key:'tabungan_saldo', value:String(num)});
   showToast('rek-tab-toast', ok.success?`✓ Saldo tabungan diset ke ${fRp(num)}`:'⚠ Tersimpan lokal', ok.success?'ok':'warn');
+  renderPage('settings');
+}
+
+// Identifikasi transaksi cashflow yang berasal dari investasi (beli/jual saham, BTC DCA, crypto).
+// Penanda: catatan 'auto-inv' (semua pembelian) atau 'Auto-catat penjualan ...' (penjualan),
+// atau kategori 'Investasi' (mencakup yang penanda catatan-nya hilang karena edit manual).
+function getInvestasiCashflowTxs(){
+  return (STATE.transactions||[]).filter(t=>{
+    const c = String(t.catatan||'');
+    return c==='auto-inv' || c.indexOf('Auto-catat penjualan')===0 || t.kategori==='Investasi';
+  });
+}
+
+async function cleanupInvestasiCashflow(){
+  const targets = getInvestasiCashflowTxs();
+  if(!targets.length){ showToast('cleanup-inv-toast','Tidak ada transaksi investasi di cashflow.','warn'); return; }
+  const total = targets.reduce((a,t)=>a+(Number(t.nominal)||0),0);
+  if(!confirm(`Hapus ${targets.length} transaksi investasi dari Cashflow (total ${fRp(total)})?\n\nSaldo Tabungan TIDAK berubah. Tindakan ini permanen.`)) return;
+  // Hapus dari STATE dulu supaya UI langsung benar
+  const ids = new Set(targets.map(t=>t.id));
+  STATE.transactions = STATE.transactions.filter(t=>!ids.has(t.id));
+  renderPage('settings');
+  // Hapus dari Sheets satu per satu (GAS deleteTransaction hapus by id, harus sekuensial)
+  let ok=0, fail=0;
+  for(const t of targets){
+    try{
+      const r = await callSheet({action:'deleteTransaction', id:t.id});
+      if(r && r.success) ok++; else fail++;
+    }catch(e){ fail++; }
+    showToast('cleanup-inv-toast', `Menghapus… ${ok+fail}/${targets.length}`, 'warn', 60000);
+  }
+  showToast('cleanup-inv-toast', fail
+    ? `✓ ${ok} terhapus · ⚠ ${fail} gagal (refresh & ulangi jika perlu)`
+    : `✓ Semua ${ok} transaksi investasi dihapus dari Cashflow. Cash kamu sekarang benar.`,
+    fail?'warn':'ok', 8000);
   renderPage('settings');
 }
 
